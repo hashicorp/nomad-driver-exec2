@@ -27,4 +27,4 @@ vet:
 hack: compile
 hack:
 	@echo "==> Run dev Nomad with exec2 plugin"
-	sudo nomad agent -dev -plugin-dir=$(NOMAD_PLUGIN_DIR)
+	sudo nomad agent -dev -plugin-dir=$(NOMAD_PLUGIN_DIR) -config=e2e/agent.hcl
