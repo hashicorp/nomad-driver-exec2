@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"regexp"
 	"slices"
 	"time"
 
@@ -173,10 +172,6 @@ func failure(state drivers.HealthState, desc string) *drivers.Fingerprint {
 		HealthDescription: desc,
 	}
 }
-
-var (
-	anonymousRe = regexp.MustCompile(`nomad:[\d]+`)
-)
 
 // StartTask will setup the environment for and then launch the actual unix
 // process of the task. This information will be encoded into, stored as, and
