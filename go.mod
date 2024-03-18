@@ -5,8 +5,9 @@ go 1.22
 require (
 	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/go-set/v2 v2.1.0
-	github.com/hashicorp/nomad v1.7.6
+	github.com/hashicorp/nomad v1.7.0-beta.2.0.20240318184618-c4253470a040 // TODO(shoenig) use v1.8
 	github.com/shoenig/go-landlock v1.2.0
+	github.com/shoenig/test v1.7.1
 	golang.org/x/sys v0.17.0
 	oss.indeed.com/go/libtime v1.6.0
 )
@@ -26,6 +27,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.15.0 // indirect
+	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gojuno/minimock/v3 v3.0.6 // indirect
@@ -94,7 +96,6 @@ require (
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.9 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
-	github.com/shoenig/test v1.7.1 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
