@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -43,18 +44,19 @@ func setup(t *testing.T) context.Context {
 }
 
 func run(t *testing.T, ctx context.Context, command string, args ...string) string {
-	t.Log("RUN", "command:", command, "args:", args)
+	t.Logf("RUN '%s %s'", command, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, command, args...)
 	b, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(b))
 	if err != nil {
 		t.Log("ERR:", err)
 		t.Log("OUT:", output)
+		t.FailNow()
 	}
 	return output
 }
 
-func stop(t *testing.T, ctx context.Context, job string) func() {
+func purge(t *testing.T, ctx context.Context, job string) func() {
 	return func() {
 		t.Log("STOP", job)
 		cmd := exec.CommandContext(ctx, "nomad", "job", "stop", "-purge", job)
@@ -75,7 +77,7 @@ func allocFromJobStatus(t *testing.T, s string) string {
 	return matches[1]
 }
 
-func TestBasic_Startup(t *testing.T) {
+func TestPluginStarts(t *testing.T) {
 	ctx := setup(t)
 
 	// can connect to nomad
@@ -90,7 +92,7 @@ func TestBasic_Startup(t *testing.T) {
 
 func TestBasic_Env(t *testing.T) {
 	ctx := setup(t)
-	defer stop(t, ctx, "env")()
+	defer purge(t, ctx, "env")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/env.hcl")
 	statusOutput := run(t, ctx, "nomad", "job", "status", "env")
@@ -109,7 +111,7 @@ func TestBasic_Env(t *testing.T) {
 
 func TestBasic_Sleep(t *testing.T) {
 	ctx := setup(t)
-	defer stop(t, ctx, "sleep")()
+	defer purge(t, ctx, "sleep")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/sleep.hcl")
 
@@ -130,7 +132,7 @@ func TestBasic_Sleep(t *testing.T) {
 
 func TestBasic_HTTP(t *testing.T) {
 	ctx := setup(t)
-	defer stop(t, ctx, "http")
+	defer purge(t, ctx, "http")
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/http.hcl")
 
@@ -155,7 +157,7 @@ func TestBasic_HTTP(t *testing.T) {
 
 func TestBasic_Passwd(t *testing.T) {
 	ctx := setup(t)
-	defer stop(t, ctx, "passwd")
+	defer purge(t, ctx, "passwd")
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/passwd.hcl")
 
@@ -172,7 +174,7 @@ func TestBasic_Passwd(t *testing.T) {
 
 func TestBasic_Cgroup(t *testing.T) {
 	ctx := setup(t)
-	defer stop(t, ctx, "cgroup")
+	defer purge(t, ctx, "cgroup")
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/cgroup.hcl")
 
@@ -189,6 +191,7 @@ func TestBasic_Cgroup(t *testing.T) {
 
 func TestBasic_Bridge(t *testing.T) {
 	ctx := setup(t)
+	defer purge(t, ctx, "bridge")
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/bridge.hcl")
 
@@ -202,7 +205,52 @@ func TestBasic_Bridge(t *testing.T) {
 	// curl service address
 	curlOutput := run(t, ctx, "curl", "-s", address)
 	must.StrContains(t, curlOutput, "<title>bridge mode</title>")
+}
 
-	// stop the service job
-	_ = run(t, ctx, "nomad", "job", "stop", "-purge", "bridge")
+func TestBasic_Resources(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "resources")
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/resources.hcl")
+
+	// make sure job is complete and logs are ready
+	time.Sleep(10 * time.Second)
+
+	t.Run("memory.max", func(t *testing.T) {
+		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "memory.max")
+		v, err := strconv.Atoi(strings.TrimSpace(logs))
+		must.NoError(t, err)
+		must.Eq(t, 209_715_200, v)
+	})
+
+	t.Run("memory.max.oversub", func(t *testing.T) {
+		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "memory.max.oversub")
+		v, err := strconv.Atoi(strings.TrimSpace(logs))
+		must.NoError(t, err)
+		must.Eq(t, 262_144_000, v)
+	})
+
+	t.Run("memory.low.oversub", func(t *testing.T) {
+		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "memory.low.oversub")
+		v, err := strconv.Atoi(strings.TrimSpace(logs))
+		must.NoError(t, err)
+		must.Eq(t, 157_286_400, v)
+	})
+
+	t.Run("cpu.max", func(t *testing.T) {
+		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "cpu.max")
+		s := strings.Fields(logs)[0]
+		v, err := strconv.Atoi(s)
+		must.NoError(t, err)
+		// gave it cpu=1000 which is (proably) less than 1 core
+		must.Less(t, 100_000, v)
+	})
+
+	t.Run("cpu.max.cores", func(t *testing.T) {
+		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "cpu.max.cores")
+		s := strings.Fields(logs)[0]
+		v, err := strconv.Atoi(s)
+		must.NoError(t, err)
+		must.Positive(t, v)
+	})
 }
