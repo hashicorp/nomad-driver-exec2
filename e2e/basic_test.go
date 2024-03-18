@@ -57,7 +57,7 @@ func run(t *testing.T, ctx context.Context, command string, args ...string) stri
 func stop(t *testing.T, ctx context.Context, job string) func() {
 	return func() {
 		t.Log("STOP", job)
-		cmd := exec.CommandContext(ctx, "nomad", "job", "stop", job)
+		cmd := exec.CommandContext(ctx, "nomad", "job", "stop", "-purge", job)
 		b, err := cmd.CombinedOutput()
 		output := strings.TrimSpace(string(b))
 		if err != nil {
@@ -151,4 +151,38 @@ func TestBasic_HTTP(t *testing.T) {
 	stopStatus := run(t, ctx, "nomad", "job", "status", "http")
 	stoppedRe := regexp.MustCompile(`Status\s+=\s+dead\s+\(stopped\)`)
 	must.RegexMatch(t, stoppedRe, stopStatus)
+}
+
+func TestBasic_Passwd(t *testing.T) {
+	ctx := setup(t)
+	defer stop(t, ctx, "passwd")
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/passwd.hcl")
+
+	// make sure job is failing (cannot read /etc/passwd)
+	time.Sleep(5 * time.Second)
+	jobStatus := run(t, ctx, "nomad", "job", "status", "passwd")
+	deadRe := regexp.MustCompile(`group\s+0\s+0\s+0\s+1\s+0\s+0\s+0`)
+	must.RegexMatch(t, deadRe, jobStatus)
+
+	// stop the job
+	stopOutput := run(t, ctx, "nomad", "job", "stop", "-purge", "passwd")
+	must.StrContains(t, stopOutput, `finished with status "complete"`)
+}
+
+func TestBasic_Cgroup(t *testing.T) {
+	ctx := setup(t)
+	defer stop(t, ctx, "cgroup")
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/cgroup.hcl")
+
+	// make sure job is complete
+	time.Sleep(5 * time.Second)
+	statusOutput := run(t, ctx, "nomad", "job", "status", "cgroup")
+
+	alloc := allocFromJobStatus(t, statusOutput)
+	cgroupRe := regexp.MustCompile(`0::/nomad\.slice/share.slice/` + alloc + `.+\.cat\.scope`)
+
+	logs := run(t, ctx, "nomad", "alloc", "logs", alloc)
+	must.RegexMatch(t, cgroupRe, logs)
 }

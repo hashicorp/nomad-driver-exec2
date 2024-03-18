@@ -1,6 +1,7 @@
 
 plugin "nomad-driver-exec2" {
   config {
-    unveil_paths = ["r:/etc/mime.types"]
+    unveil_by_task = true
+    unveil_paths   = ["r:/etc/mime.types"]
   }
 }
