@@ -186,3 +186,23 @@ func TestBasic_Cgroup(t *testing.T) {
 	logs := run(t, ctx, "nomad", "alloc", "logs", alloc)
 	must.RegexMatch(t, cgroupRe, logs)
 }
+
+func TestBasic_Bridge(t *testing.T) {
+	ctx := setup(t)
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/bridge.hcl")
+
+	serviceInfo := run(t, ctx, "nomad", "service", "info", "homepage")
+	addressRe := regexp.MustCompile(`([\d]+\.[\d]+.[\d]+\.[\d]+:[\d]+)`)
+
+	m := addressRe.FindStringSubmatch(serviceInfo)
+	must.SliceLen(t, 2, m, must.Sprint("expected to find address"))
+	address := m[1]
+
+	// curl service address
+	curlOutput := run(t, ctx, "curl", "-s", address)
+	must.StrContains(t, curlOutput, "<title>bridge mode</title>")
+
+	// stop the service job
+	_ = run(t, ctx, "nomad", "job", "stop", "-purge", "bridge")
+}
