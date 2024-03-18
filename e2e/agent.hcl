@@ -1,3 +1,6 @@
+# intended to be used in conjunction with -dev mode; namely by invoking the
+# 'make hack' Makefile target
+
 server {
   enabled = true
   default_scheduler_config {
