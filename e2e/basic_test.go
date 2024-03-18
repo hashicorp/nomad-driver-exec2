@@ -26,6 +26,10 @@ import (
 
 const timeout = 30 * time.Second
 
+var (
+	deadRe = regexp.MustCompile(`group\s+0\s+0\s+0\s+1\s+0\s+0\s+0`)
+)
+
 func pause() {
 	if ci := os.Getenv("CI"); ci == "" {
 		time.Sleep(500 * time.Millisecond)
@@ -190,10 +194,9 @@ func TestBasic_Passwd(t *testing.T) {
 	// make sure job is failing (cannot read /etc/passwd)
 	time.Sleep(5 * time.Second)
 	jobStatus := run(t, ctx, "nomad", "job", "status", "passwd")
-	deadRe := regexp.MustCompile(`group\s+0\s+0\s+0\s+1\s+0\s+0\s+0`)
 	must.RegexMatch(t, deadRe, jobStatus)
 
-	// stop the job
+	// stop the job and check complete
 	stopOutput := run(t, ctx, "nomad", "job", "stop", "-purge", "passwd")
 	must.StrContains(t, stopOutput, `finished with status "complete"`)
 }
@@ -229,6 +232,33 @@ func TestBasic_Bridge(t *testing.T) {
 	// curl service address
 	curlOutput := run(t, ctx, "curl", "-s", address)
 	must.StrContains(t, curlOutput, "<title>bridge mode</title>")
+}
+
+func TestBasic_ProcessNamespace(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "ps")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/ps.hcl")
+
+	logs := logs2(t, ctx, "ps", "ps")
+	lines := strings.Split(logs, "\n") // header and ps
+	must.SliceLen(t, 2, lines, must.Sprintf("expected 2 lines, got %q", logs))
+}
+
+func TestBasic_Exit7(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "exit7")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/exit7.hcl")
+
+	// make sure job is failing (script returns exit code 7)
+	time.Sleep(5 * time.Second)
+	jobStatus := run(t, ctx, "nomad", "job", "status", "exit7")
+	must.RegexMatch(t, deadRe, jobStatus)
+
+	// stop the job and check complete
+	stopOutput := run(t, ctx, "nomad", "job", "stop", "-purge", "exit7")
+	must.StrContains(t, stopOutput, `finished with status "complete"`)
 }
 
 func TestBasic_Resources(t *testing.T) {
