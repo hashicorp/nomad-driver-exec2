@@ -263,6 +263,16 @@ func TestBasic_Exit7(t *testing.T) {
 	must.StrContains(t, stopOutput, `finished with status "complete"`)
 }
 
+func TestBasic_Ignore(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "ignore")
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/ignore.hcl")
+
+	stopOutput := run(t, ctx, "nomad", "job", "stop", "ignore")
+	must.StrContains(t, stopOutput, `finished with status "complete"`)
+}
+
 func TestBasic_Resources(t *testing.T) {
 	ctx := setup(t)
 	defer purge(t, ctx, "resources")()
