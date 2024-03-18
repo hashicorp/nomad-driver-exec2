@@ -61,12 +61,13 @@ func run(t *testing.T, ctx context.Context, command string, args ...string) stri
 }
 
 func logs(t *testing.T, ctx context.Context, alloc string) string {
-	for i := range 30 {
+	const retries = 30
+	for i := range retries {
 		output := strings.TrimSpace(run(t, ctx, "nomad", "alloc", "logs", alloc))
 		if output != "" {
 			return output
 		}
-		t.Logf("got empty logs for alloc %s on attempt %d/10", alloc, i)
+		t.Logf("got empty logs for alloc %s on attempt %d/%d", alloc, i, retries)
 		time.Sleep(1 * time.Second)
 	}
 	t.FailNow()
@@ -74,12 +75,13 @@ func logs(t *testing.T, ctx context.Context, alloc string) string {
 }
 
 func logs2(t *testing.T, ctx context.Context, job, task string) string {
-	for i := range 30 {
+	const retries = 30
+	for i := range retries {
 		output := strings.TrimSpace(run(t, ctx, "nomad", "logs", "-job", job, task))
 		if output != "" {
 			return output
 		}
-		t.Logf("got empty logs for task %s/%s on attempt %d/10", job, task, i)
+		t.Logf("got empty logs for task %s/%s on attempt %d/%d", job, task, i, retries)
 		time.Sleep(1 * time.Second)
 	}
 	t.FailNow()
