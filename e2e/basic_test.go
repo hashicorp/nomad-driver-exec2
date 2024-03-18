@@ -56,6 +56,32 @@ func run(t *testing.T, ctx context.Context, command string, args ...string) stri
 	return output
 }
 
+func logs(t *testing.T, ctx context.Context, alloc string) string {
+	for i := range 30 {
+		output := strings.TrimSpace(run(t, ctx, "nomad", "alloc", "logs", alloc))
+		if output != "" {
+			return output
+		}
+		t.Logf("got empty logs for alloc %s on attempt %d/10", alloc, i)
+		time.Sleep(1 * time.Second)
+	}
+	t.FailNow()
+	return ""
+}
+
+func logs2(t *testing.T, ctx context.Context, job, task string) string {
+	for i := range 30 {
+		output := strings.TrimSpace(run(t, ctx, "nomad", "logs", "-job", job, task))
+		if output != "" {
+			return output
+		}
+		t.Logf("got empty logs for task %s/%s on attempt %d/10", job, task, i)
+		time.Sleep(1 * time.Second)
+	}
+	t.FailNow()
+	return ""
+}
+
 func purge(t *testing.T, ctx context.Context, job string) func() {
 	return func() {
 		t.Log("STOP", job)
@@ -104,9 +130,9 @@ func TestBasic_Env(t *testing.T) {
 	// env contains sensible USER (dynamic)
 	containsUserRe := regexp.MustCompile(`USER=nomad-\d+`)
 
-	logs := run(t, ctx, "nomad", "alloc", "logs", alloc)
-	must.RegexMatch(t, containsAllocEnvRe, logs)
-	must.RegexMatch(t, containsUserRe, logs)
+	output := logs(t, ctx, alloc)
+	must.RegexMatch(t, containsAllocEnvRe, output)
+	must.RegexMatch(t, containsUserRe, output)
 }
 
 func TestBasic_Sleep(t *testing.T) {
@@ -132,7 +158,7 @@ func TestBasic_Sleep(t *testing.T) {
 
 func TestBasic_HTTP(t *testing.T) {
 	ctx := setup(t)
-	defer purge(t, ctx, "http")
+	defer purge(t, ctx, "http")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/http.hcl")
 
@@ -157,7 +183,7 @@ func TestBasic_HTTP(t *testing.T) {
 
 func TestBasic_Passwd(t *testing.T) {
 	ctx := setup(t)
-	defer purge(t, ctx, "passwd")
+	defer purge(t, ctx, "passwd")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/passwd.hcl")
 
@@ -174,24 +200,22 @@ func TestBasic_Passwd(t *testing.T) {
 
 func TestBasic_Cgroup(t *testing.T) {
 	ctx := setup(t)
-	defer purge(t, ctx, "cgroup")
+	defer purge(t, ctx, "cgroup")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/cgroup.hcl")
 
-	// make sure job is complete
-	time.Sleep(5 * time.Second)
 	statusOutput := run(t, ctx, "nomad", "job", "status", "cgroup")
 
 	alloc := allocFromJobStatus(t, statusOutput)
 	cgroupRe := regexp.MustCompile(`0::/nomad\.slice/share.slice/` + alloc + `.+\.cat\.scope`)
 
-	logs := run(t, ctx, "nomad", "alloc", "logs", alloc)
-	must.RegexMatch(t, cgroupRe, logs)
+	output := logs(t, ctx, alloc)
+	must.RegexMatch(t, cgroupRe, output)
 }
 
 func TestBasic_Bridge(t *testing.T) {
 	ctx := setup(t)
-	defer purge(t, ctx, "bridge")
+	defer purge(t, ctx, "bridge")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/bridge.hcl")
 
@@ -209,37 +233,34 @@ func TestBasic_Bridge(t *testing.T) {
 
 func TestBasic_Resources(t *testing.T) {
 	ctx := setup(t)
-	defer purge(t, ctx, "resources")
+	defer purge(t, ctx, "resources")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/resources.hcl")
 
-	// make sure job is complete and logs are ready
-	time.Sleep(10 * time.Second)
-
 	t.Run("memory.max", func(t *testing.T) {
-		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "memory.max")
-		v, err := strconv.Atoi(strings.TrimSpace(logs))
+		output := logs2(t, ctx, "resources", "memory.max")
+		v, err := strconv.Atoi(strings.TrimSpace(output))
 		must.NoError(t, err)
 		must.Eq(t, 209_715_200, v)
 	})
 
 	t.Run("memory.max.oversub", func(t *testing.T) {
-		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "memory.max.oversub")
-		v, err := strconv.Atoi(strings.TrimSpace(logs))
+		output := logs2(t, ctx, "resources", "memory.max.oversub")
+		v, err := strconv.Atoi(strings.TrimSpace(output))
 		must.NoError(t, err)
 		must.Eq(t, 262_144_000, v)
 	})
 
 	t.Run("memory.low.oversub", func(t *testing.T) {
-		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "memory.low.oversub")
-		v, err := strconv.Atoi(strings.TrimSpace(logs))
+		output := logs2(t, ctx, "resources", "memory.low.oversub")
+		v, err := strconv.Atoi(strings.TrimSpace(output))
 		must.NoError(t, err)
 		must.Eq(t, 157_286_400, v)
 	})
 
 	t.Run("cpu.max", func(t *testing.T) {
-		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "cpu.max")
-		s := strings.Fields(logs)[0]
+		output := logs2(t, ctx, "resources", "cpu.max")
+		s := strings.Fields(output)[0]
 		v, err := strconv.Atoi(s)
 		must.NoError(t, err)
 		// gave it cpu=1000 which is (proably) less than 1 core
@@ -247,8 +268,8 @@ func TestBasic_Resources(t *testing.T) {
 	})
 
 	t.Run("cpu.max.cores", func(t *testing.T) {
-		logs := run(t, ctx, "nomad", "logs", "-job", "resources", "cpu.max.cores")
-		s := strings.Fields(logs)[0]
+		output := logs2(t, ctx, "resources", "cpu.max.cores")
+		s := strings.Fields(output)[0]
 		v, err := strconv.Atoi(s)
 		must.NoError(t, err)
 		must.Positive(t, v)
