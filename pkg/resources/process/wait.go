@@ -1,8 +1,6 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: BUSL-1.1
 
-//go:build linux
-
 package process
 
 import (
@@ -26,6 +24,9 @@ type Waiter interface {
 	Wait() *Exit
 }
 
+// WaitOnChild makes use of the os.Process handle to wait on the child process.
+// This is the handle returned from directly launching the process through
+// the exec package.
 func WaitOnChild(p *os.Process) Waiter {
 	return &execWaiter{p: p}
 }
@@ -38,10 +39,9 @@ func (w *execWaiter) Wait() *Exit {
 	ps, err := w.p.Wait()
 	status := ps.Sys().(syscall.WaitStatus)
 	code := ps.ExitCode()
-	if code < 0 {
-		// just be cool
-		code = int(status) + 128
-	}
+	// TODO(shoenig): pledge driver added 128 to any negative code here
+	// but ... why? do we need that?
+
 	return &Exit{
 		Code:      code,
 		Interrupt: int(status),
@@ -49,10 +49,12 @@ func (w *execWaiter) Wait() *Exit {
 	}
 }
 
-// WaitOnOrphan provides a last-ditch effort to wait() on a process that the plugin
-// must reattach to. This should never happen, because a Nomad Client restart should
-// not trigger task driver plugin restarts - but we implement this ability just in
-// case ~ kludgy as it may be.
+// WaitOnOrphan invokes the waitpid syscall on pid to wait on a process that
+// the driver no longer has a direct handle on.
+//
+// Note that while we could use os.FindProcess to attempt to restore the handle
+// of a live process, with waitpid we at least have a chance of recovering the
+// exit status of a recently deceased child.
 func WaitOnOrphan(pid int) Waiter {
 	return &pidWaiter{pid: pid}
 }
@@ -65,15 +67,16 @@ func (w *pidWaiter) Wait() *Exit {
 	fd, err := openFD(w.pid)
 	if err != nil {
 		return &Exit{
-			Code: 255,
+			Code: -1,
 			Err:  err,
 		}
 	}
 
 	pollFD := []unix.PollFd{{Fd: fd}}
-	timeout := -1 // infinite
+	const timeout = -1 // infinite
 
-	// we should check the return is what we expect
+	// wait for the orphaned child to die
+	// ignore the error; we expect it
 	_, _ = unix.Poll(pollFD, timeout)
 
 	// lookup exit code from /proc/<pid>/stat ?
@@ -109,11 +112,14 @@ func codeFromStat(pid int) (int, error) {
 	return code, nil
 }
 
+// open fd for pid using pidfd_open
+//
+// https://www.man7.org/linux/man-pages/man2/pidfd_open.2.html
 func openFD(pid int) (int32, error) {
 	const syscallNumber = 434
-	fd, _, e := syscall.Syscall(syscallNumber, uintptr(pid), uintptr(0), 0)
-	if e != 0 {
-		return 0, e
+	fd, _, err := syscall.Syscall(syscallNumber, uintptr(pid), uintptr(0), 0)
+	if err != 0 {
+		return 0, err
 	}
 	return int32(fd), nil
 }
