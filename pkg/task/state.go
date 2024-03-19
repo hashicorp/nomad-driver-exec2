@@ -15,4 +15,5 @@ type State struct {
 	TaskConfig *drivers.TaskConfig
 	StartedAt  time.Time
 	PID        int
+	Cancel     func()
 }

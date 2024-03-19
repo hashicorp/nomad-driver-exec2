@@ -446,6 +446,10 @@ func netns(c *drivers.TaskConfig) string {
 
 func (p *Plugin) stats(ctx context.Context, ch chan<- *drivers.TaskResourceUsage, interval time.Duration, h *task.Handle) {
 	defer close(ch)
+
+	// Nomad client asks for 1 second intervals, but other drivers run a
+	// stats collector in the background on a much slower period.
+
 	ticks, stop := libtime.SafeTimer(interval)
 	defer stop()
 
@@ -454,7 +458,7 @@ func (p *Plugin) stats(ctx context.Context, ch chan<- *drivers.TaskResourceUsage
 		case <-ctx.Done():
 			return
 		case <-ticks.C:
-			ticks.Reset(interval)
+			// unblock once
 		}
 
 		usage := h.Stats()
@@ -480,6 +484,9 @@ func (p *Plugin) stats(ctx context.Context, ch chan<- *drivers.TaskResourceUsage
 			Timestamp: time.Now().UTC().UnixNano(),
 			Pids:      nil,
 		}
+
+		// reset the ticker after doing the work of collecting stats
+		ticks.Reset(interval)
 	}
 }
 

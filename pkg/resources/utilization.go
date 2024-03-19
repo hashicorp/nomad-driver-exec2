@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -79,57 +80,56 @@ var (
 	processorRe = regexp.MustCompile(`processor\s+:\s+(\d+)`)
 )
 
-func Get() (*Specs, error) {
-	// todo: read base_freq instead, for more accurate per-core
-	// information similar to how m1 stuff works. probably in a library.
-	// cannot really do this until nomad and all task drivers agree
+var (
+	specs *Specs
+	once  sync.Once
+)
 
-	// todo: cache this value, it should never change
-
-	var speed int
-	b, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
-	if err == nil {
-		i, err := strconv.Atoi(strings.TrimSpace(string(b)))
+func GetSpecs() *Specs {
+	once.Do(func() {
+		var speed int
+		b, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
 		if err == nil {
-			speed = i / 1000
-		}
-	}
-
-	// need this for core count (for now) and fallback speeds
-	b, err = os.ReadFile("/proc/cpuinfo")
-	if err != nil {
-		return nil, err
-	}
-	content := string(b)
-
-	// if the devices info doesn't work (i.e. running on ec2), fallback to
-	// reading live frequencies from cpuinfo and pick the largest one
-	if speed == 0 {
-		results := mhzRe.FindAllStringSubmatch(content, -1)
-		for _, result := range results {
-			if mhz, _ := strconv.Atoi(result[1]); mhz > speed {
-				speed = mhz
+			i, err := strconv.Atoi(strings.TrimSpace(string(b)))
+			if err == nil {
+				speed = i / 1000
 			}
 		}
-	}
 
-	// number of cores really means number of hyperthreads
-	cores := len(processorRe.FindAllStringSubmatch(content, -1))
+		// need this for core count (for now) and fallback speeds
+		b, err = os.ReadFile("/proc/cpuinfo")
+		if err != nil {
+			panic("bug: cannot operate without /proc/cpuinfo")
+		}
+		content := string(b)
 
-	return &Specs{
-		MHz:   speed,
-		Cores: cores,
-	}, nil
+		// if the devices info doesn't work (i.e. running on ec2), fallback to
+		// reading live frequencies from cpuinfo and pick the largest one
+		if speed == 0 {
+			results := mhzRe.FindAllStringSubmatch(content, -1)
+			for _, result := range results {
+				if mhz, _ := strconv.Atoi(result[1]); mhz > speed {
+					speed = mhz
+				}
+			}
+		}
+
+		// number of cores really means number of hyperthreads
+		cores := len(processorRe.FindAllStringSubmatch(content, -1))
+
+		// set our cache value
+		specs = &Specs{
+			MHz:   speed,
+			Cores: cores,
+		}
+	})
+	return specs
 }
 
 // Bandwidth computes the CPU bandwidth given a mhz value from task config.
 // We assume the bandwidth per-core base is 100_000 which is the default.
 func Bandwidth(mhz uint64) (uint64, error) {
-	specs, err := Get()
-	if err != nil {
-		return 0, err
-	}
-
+	specs := GetSpecs()
 	v := (mhz * 100000) / uint64(specs.MHz)
 	return v, nil
 }
