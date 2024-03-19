@@ -1,9 +1,9 @@
 name: Run CI Tests
 on: [push]
 jobs:
-  lint:
-    runs-on: ubuntu-22.04
+  run-lint:
     timeout-minutes: 10
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-golang@v3
@@ -14,7 +14,17 @@ jobs:
           version: v1.56.2
           skip-cache: true
           args: --timeout=8m
+  run-copywrite:
+    timeout-minutes: 10
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-copywrite@v1.1.2
+      - name: verify copywrite headers
+        run: |
+          copywrite --config .copywrite.hcl headers --spdx "MPL-2.0" --plan
   run-tests:
+    timeout-minutes: 10
     strategy:
       fail-fast: true
       matrix:

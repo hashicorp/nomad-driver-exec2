@@ -7,6 +7,11 @@ clean:
 	@echo "==> Cleanup previous build"
 	rm -f $(NOMAD_PLUGIN_DIR)/nomad-driver-exec2
 
+.PHONY: copywrite
+copywrite:
+	@echo "==> Checking copywrite headers"
+	copywrite --config .copywrite.hcl headers --spdx "MPL-2.0"
+
 .PHONY: compile
 compile: clean
 	@echo "==> Compile exec2 plugin"
