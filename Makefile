@@ -13,6 +13,11 @@ compile: clean
 	mkdir -p $(NOMAD_PLUGIN_DIR)
 	go build -race -o $(NOMAD_PLUGIN_DIR)/nomad-driver-exec2
 
+.PHONY: e2e
+e2e:
+	@echo "==> Run exec2 e2e tests"
+	cd e2e && GOFLAGS='--tags=e2e' go test -v .
+
 .PHONY: test
 test:
 	@echo "==> Run exec2 tests"
