@@ -14,6 +14,9 @@ server {
 
 client {
   enabled = true
+  options = {
+    "fingerprint.denylist" = "env_aws,env_gce,env_azure,env_digitalocean"
+  }
 }
 
 plugin "nomad-driver-exec2" {
