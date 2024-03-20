@@ -40,7 +40,7 @@ func NewHandle(runner shim.ExecTwo, config *drivers.TaskConfig) (*Handle, time.T
 		state:   drivers.TaskStateRunning,
 		clock:   clock,
 		started: now,
-		result:  new(drivers.ExitResult),
+		result:  nil,
 	}, now
 }
 
@@ -53,7 +53,7 @@ func RecreateHandle(runner shim.ExecTwo, config *drivers.TaskConfig, started tim
 		state:   drivers.TaskStateUnknown,
 		clock:   clock,
 		started: started,
-		result:  new(drivers.ExitResult),
+		result:  nil,
 	}
 }
 
@@ -61,6 +61,12 @@ func (h *Handle) Stats() resources.Utilization {
 	h.lock.RLock()
 	defer h.lock.RUnlock()
 	return h.runner.Stats()
+}
+
+func (h *Handle) IsRunning() bool {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	return h.state == drivers.TaskStateRunning
 }
 
 func (h *Handle) Status() *drivers.TaskStatus {
@@ -80,28 +86,25 @@ func (h *Handle) Status() *drivers.TaskStatus {
 	}
 }
 
-func (h *Handle) IsRunning() bool {
-	h.lock.RLock()
-	defer h.lock.RUnlock()
-	return h.state == drivers.TaskStateRunning
-}
-
 func (h *Handle) Block() {
-	err := h.runner.Wait()
+	ch := h.runner.WaitCh()
+	result := <-ch
+	// nl.Info("got result, in Handle.Block()", "code", result.ExitCode, "error", result.Err)
 
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	if err != nil {
-		h.result.Err = err
-		h.state = drivers.TaskStateUnknown
-		h.completed = h.clock.Now()
+	if h.result != nil {
 		return
 	}
 
-	h.result.ExitCode = h.runner.Result()
-	h.completed = h.clock.Now()
 	h.state = drivers.TaskStateExited
+	h.result = result
+	h.completed = h.clock.Now()
+
+	if err := h.result.Err; err != nil {
+		h.state = drivers.TaskStateUnknown
+	}
 }
 
 func (h *Handle) Signal(s string) error {

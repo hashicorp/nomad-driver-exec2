@@ -21,12 +21,12 @@ func TestOrphan_Wait(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "sleep", ".1s")
 	must.NoError(t, cmd.Start())
 
-	waiter := WaitOnOrphan(cmd.Process.Pid)
-	exit := waiter.Wait()
+	waitCh := WaitOnOrphan(cmd.Process.Pid).Wait()
+	result := <-waitCh
 
 	must.Greater(t, 100*time.Millisecond, time.Since(start))
-	must.NoError(t, exit.Err)
-	must.Zero(t, exit.Code)
+	must.NoError(t, result.Err)
+	must.Zero(t, result.ExitCode)
 }
 
 func TestOrphan_WaitFailure(t *testing.T) {
@@ -36,9 +36,9 @@ func TestOrphan_WaitFailure(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "sleep", "abc") // exit 1
 	must.NoError(t, cmd.Start())
 
-	waiter := WaitOnOrphan(cmd.Process.Pid)
-	exit := waiter.Wait()
+	waitCh := WaitOnOrphan(cmd.Process.Pid).Wait()
+	result := <-waitCh
 
-	must.NoError(t, exit.Err)
-	must.One(t, exit.Code)
+	must.NoError(t, result.Err)
+	must.One(t, result.ExitCode)
 }

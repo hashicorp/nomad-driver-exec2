@@ -332,8 +332,7 @@ func (p *Plugin) WaitTask(ctx context.Context, taskID string) (<-chan *drivers.E
 // process does not exit within the given timeout.
 func (p *Plugin) StopTask(taskID string, timeout time.Duration, signal string) error {
 	if signal == "" {
-		// SIGINT is the value used for the original exec driver so we may as
-		// well keep that tradition going
+		// SIGINT is the value used for the original exec driver
 		signal = "sigint"
 	}
 

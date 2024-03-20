@@ -11,41 +11,51 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/hashicorp/nomad/plugins/drivers"
 	"golang.org/x/sys/unix"
 )
 
-type Exit struct {
-	Code      int
-	Interrupt int
-	Err       error
-}
+type WaitCh <-chan *drivers.ExitResult
 
 type Waiter interface {
-	Wait() *Exit
+	Wait() WaitCh
 }
 
 // WaitOnChild makes use of the os.Process handle to wait on the child process.
 // This is the handle returned from directly launching the process through
 // the exec package.
 func WaitOnChild(p *os.Process) Waiter {
-	return &execWaiter{p: p}
+	return &execWaiter{
+		p:  p,
+		ch: make(chan *drivers.ExitResult),
+	}
 }
 
 type execWaiter struct {
-	p *os.Process
+	p  *os.Process
+	ch chan *drivers.ExitResult
 }
 
-func (w *execWaiter) Wait() *Exit {
-	ps, err := w.p.Wait()
-	status := ps.Sys().(syscall.WaitStatus)
-	code := ps.ExitCode()
-	// TODO(shoenig): pledge driver added 128 to any negative code here
-	// but ... why? do we need that?
+func (w *execWaiter) Wait() WaitCh {
+	go w.wait(w.ch)
+	return w.ch
+}
 
-	return &Exit{
-		Code:      code,
-		Interrupt: int(status),
-		Err:       err,
+func (w *execWaiter) wait(ch chan<- *drivers.ExitResult) {
+	defer close(ch)
+
+	ps, err := w.p.Wait()
+
+	var signal = syscall.Signal(0)
+	if ps.Sys() != nil {
+		status := ps.Sys().(syscall.WaitStatus)
+		signal = status.Signal()
+	}
+
+	ch <- &drivers.ExitResult{
+		ExitCode: ps.ExitCode(),
+		Signal:   int(signal),
+		Err:      err,
 	}
 }
 
@@ -56,20 +66,32 @@ func (w *execWaiter) Wait() *Exit {
 // of a live process, with waitpid we at least have a chance of recovering the
 // exit status of a recently deceased child.
 func WaitOnOrphan(pid int) Waiter {
-	return &pidWaiter{pid: pid}
+	return &pidWaiter{
+		pid: pid,
+		ch:  make(chan *drivers.ExitResult),
+	}
 }
 
 type pidWaiter struct {
 	pid int
+	ch  chan *drivers.ExitResult
 }
 
-func (w *pidWaiter) Wait() *Exit {
+func (w *pidWaiter) Wait() WaitCh {
+	go w.wait(w.ch)
+	return w.ch
+}
+
+func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
+	defer close(ch)
+
 	fd, err := openFD(w.pid)
 	if err != nil {
-		return &Exit{
-			Code: -1,
-			Err:  err,
+		ch <- &drivers.ExitResult{
+			ExitCode: -1,
+			Err:      err,
 		}
+		return
 	}
 
 	pollFD := []unix.PollFd{{Fd: fd}}
@@ -81,9 +103,9 @@ func (w *pidWaiter) Wait() *Exit {
 
 	// lookup exit code from /proc/<pid>/stat ?
 	code, err := codeFromStat(w.pid)
-	return &Exit{
-		Code: code,
-		Err:  err,
+	ch <- &drivers.ExitResult{
+		ExitCode: code,
+		Err:      err,
 	}
 }
 

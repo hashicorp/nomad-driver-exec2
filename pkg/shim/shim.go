@@ -59,7 +59,7 @@ type ExecTwo interface {
 	// Wait on the process (until exit).
 	//
 	// Must only be called after Start.
-	Wait() error
+	WaitCh() process.WaitCh
 
 	// Stats returns current resource utilization.
 	//
@@ -75,11 +75,6 @@ type ExecTwo interface {
 	//
 	// Must be called after Start.
 	Stop(string, time.Duration) error
-
-	// Result of the process completion.
-	//
-	// Must be called after Wait.
-	Result() int // exit code
 }
 
 // New an ExecTwo, an instantiation of the exec2 driver.
@@ -94,12 +89,12 @@ func New(env *Environment, opts *Options) ExecTwo {
 // Recover an ExecTwo, an already running instance of the execc2 driver.
 func Recover(pid int, env *Environment) ExecTwo {
 	return &exe{
-		pid:    pid,
-		env:    env,
-		opts:   nil, // already started, no use
-		waiter: process.WaitOnOrphan(pid),
-		signal: process.Signals(pid),
-		cpu:    new(resources.TrackCPU),
+		pid:     pid,
+		env:     env,
+		opts:    nil, // already started, no use
+		waiter:  process.WaitOnOrphan(pid).Wait(),
+		signals: process.Signals(pid),
+		cpu:     new(resources.TrackCPU),
 	}
 }
 
@@ -109,11 +104,10 @@ type exe struct {
 	opts *Options
 
 	// comes from runtime
-	pid    int
-	cpu    *resources.TrackCPU
-	waiter process.Waiter
-	signal process.Signaler
-	code   int
+	pid     int
+	cpu     *resources.TrackCPU
+	waiter  process.WaitCh
+	signals process.Signaler
 }
 
 func (e *exe) Start(ctx context.Context) error {
@@ -145,8 +139,8 @@ func (e *exe) Start(ctx context.Context) error {
 
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
-	e.waiter = process.WaitOnChild(cmd.Process)
-	e.signal = process.Signals(cmd.Process.Pid)
+	e.signals = process.Signals(cmd.Process.Pid)
+	e.waiter = process.WaitOnChild(cmd.Process).Wait()
 
 	return nil
 }
@@ -155,14 +149,12 @@ func (e *exe) PID() int {
 	return e.pid
 }
 
-func (e *exe) Wait() error {
-	exit := e.waiter.Wait()
-	e.code = exit.Code
-	return exit.Err
+func (e *exe) WaitCh() process.WaitCh {
+	return e.waiter
 }
 
 func (e *exe) Signal(s string) error {
-	return e.signal.Send(s)
+	return e.signals.Send(s)
 }
 
 func (e *exe) Stop(signal string, timeout time.Duration) error {
@@ -175,10 +167,6 @@ func (e *exe) Stop(signal string, timeout time.Duration) error {
 		_ = e.env.Err.Close()
 	}
 	return err
-}
-
-func (e *exe) Result() int {
-	return e.code
 }
 
 func (e *exe) Stats() resources.Utilization {
