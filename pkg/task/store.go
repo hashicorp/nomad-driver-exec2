@@ -8,6 +8,7 @@ import "sync"
 // ID is a task ID
 type ID = string
 
+// A Store is used to keep track of task handles in memory.
 type Store interface {
 	Set(ID, *Handle)
 	Get(ID) (*Handle, bool)
