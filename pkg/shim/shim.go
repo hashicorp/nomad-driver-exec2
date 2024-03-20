@@ -98,7 +98,7 @@ func Recover(pid int, env *Environment) ExecTwo {
 		env:    env,
 		opts:   nil, // already started, no use
 		waiter: process.WaitOnOrphan(pid),
-		signal: process.Interrupts(pid),
+		signal: process.Signals(pid),
 		cpu:    new(resources.TrackCPU),
 	}
 }
@@ -134,7 +134,7 @@ func (e *exe) Start(ctx context.Context) error {
 	}
 
 	// create sandbox using nsenter, unshare, and our cgroup
-	cmd := e.isolation(ctx, home, fd, uid, gid)
+	cmd := e.prepare(ctx, home, fd, uid, gid)
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
@@ -146,7 +146,7 @@ func (e *exe) Start(ctx context.Context) error {
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
 	e.waiter = process.WaitOnChild(cmd.Process)
-	e.signal = process.Interrupts(cmd.Process.Pid)
+	e.signal = process.Signals(cmd.Process.Pid)
 
 	return nil
 }
@@ -162,7 +162,7 @@ func (e *exe) Wait() error {
 }
 
 func (e *exe) Signal(s string) error {
-	return e.signal.Signal(s)
+	return e.signal.Send(s)
 }
 
 func (e *exe) Stop(signal string, timeout time.Duration) error {
@@ -307,8 +307,8 @@ func (e *exe) parameters(uid, gid int) []string {
 	return result
 }
 
-// setup the process to be run
-func (e *exe) isolation(ctx context.Context, home string, fd, uid, gid int) *exec.Cmd {
+// create an exec.Cmd to run our process
+func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.Cmd {
 	params := e.parameters(uid, gid)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
 	cmd.Stdout = e.env.Out
@@ -379,11 +379,6 @@ func extractCPU(s string) (user, system, total resources.MicroSecond) {
 	return
 }
 
-const (
-	pidsAllGone  = 0
-	pidsReadFail = -1
-)
-
 // blockPIDs blocks until there are no more live processes in the cgroup, and returns true
 // if the timeout is exceeded or an error occurs.
 func (e *exe) blockPIDs(timeout time.Duration) bool {
@@ -397,10 +392,10 @@ func (e *exe) blockPIDs(timeout time.Duration) bool {
 		case <-ticker.C:
 			count := e.currentPIDs()
 			switch count {
-			case pidsAllGone:
+			case 0:
 				// processes are no longer running
 				return false
-			case pidsReadFail:
+			case -1:
 				// failed to read cgroups file, issue force kill
 				return true
 			default:
@@ -417,14 +412,14 @@ func (e *exe) blockPIDs(timeout time.Duration) bool {
 func (e *exe) currentPIDs() int {
 	s, err := e.readCG("pids.current")
 	if err != nil {
-		return pidsReadFail
+		return -1
 	}
 	if s == "" {
-		return pidsAllGone
+		return 0
 	}
 	i, err := strconv.Atoi(s)
 	if err != nil {
-		return pidsReadFail
+		return 0
 	}
 	return i
 }

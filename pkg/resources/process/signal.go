@@ -8,9 +8,10 @@ import (
 	"syscall"
 )
 
-// A Signaler is used to issue a signal.
+// A Signaler is used to issue a signal to a process group.
 type Signaler interface {
-	Signal(s string) error
+	// Send uses the kill syscall to issue a given signal.
+	Send(signal string) error
 }
 
 func parse(s string) syscall.Signal {
@@ -40,21 +41,22 @@ func parse(s string) syscall.Signal {
 	case "sigpwr":
 		return syscall.SIGPWR
 	default:
-		return syscall.SIGSTOP
+		// not much else we can do
+		return syscall.Signal(0)
 	}
 }
 
-// Interrupts returns a Signaler that issues real os signals.
-func Interrupts(pid int) Signaler {
-	return &sysSignal{pid: pid}
+// Signals returns a Signaler that issues real os signals.
+func Signals(pid int) Signaler {
+	return &system{pid: pid}
 }
 
-type sysSignal struct {
+type system struct {
 	pid int
 }
 
-func (sig *sysSignal) Signal(signal string) error {
-	s := parse(signal)
+func (s *system) Send(signal string) error {
+	sig := parse(signal)
 	// send the signal to the process group
-	return syscall.Kill(-sig.pid, s)
+	return syscall.Kill(-s.pid, sig)
 }
