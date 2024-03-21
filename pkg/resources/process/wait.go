@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type WaitCh <-chan *drivers.ExitResult
+type WaitCh chan *drivers.ExitResult
 
 type Waiter interface {
 	Wait() WaitCh
@@ -42,8 +42,6 @@ func (w *execWaiter) Wait() WaitCh {
 }
 
 func (w *execWaiter) wait(ch chan<- *drivers.ExitResult) {
-	defer close(ch)
-
 	ps, err := w.p.Wait()
 
 	var signal = syscall.Signal(0)
@@ -83,8 +81,6 @@ func (w *pidWaiter) Wait() WaitCh {
 }
 
 func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
-	defer close(ch)
-
 	fd, err := openFD(w.pid)
 	if err != nil {
 		ch <- &drivers.ExitResult{

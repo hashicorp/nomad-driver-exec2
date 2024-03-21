@@ -17,6 +17,9 @@ import (
 )
 
 // A Handle is used by the driver plugin to keep track of active tasks.
+//
+// Handle must be comletetly thread-safe; all operations must go through
+// the lock.
 type Handle struct {
 	lock sync.RWMutex
 
@@ -89,11 +92,12 @@ func (h *Handle) Status() *drivers.TaskStatus {
 func (h *Handle) Block() {
 	ch := h.runner.WaitCh()
 	result := <-ch
-	// nl.Info("got result, in Handle.Block()", "code", result.ExitCode, "error", result.Err)
 
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
+	// a result has already been pushed through the channel and we just need to
+	// read the existing value
 	if h.result != nil {
 		return
 	}
@@ -105,6 +109,10 @@ func (h *Handle) Block() {
 	if err := h.result.Err; err != nil {
 		h.state = drivers.TaskStateUnknown
 	}
+
+	// close the channel; we are done waiting on our process and we can allow
+	// other callers of Block to read the value we just set
+	close(ch)
 }
 
 func (h *Handle) Signal(s string) error {
