@@ -121,20 +121,22 @@ func (p *Plugin) fingerprint(ctx context.Context, ch chan<- *drivers.Fingerprint
 		case <-p.ctx.Done():
 			return
 		case <-timer.C:
-			ch <- p.doFingerprint()
+			ch <- p.doFingerprint(exec.LookPath)
 			timer.Reset(frequency)
 		}
 	}
 }
 
-func (p *Plugin) doFingerprint() *drivers.Fingerprint {
+type lookupFunc = func(string) (string, error)
+
+func (p *Plugin) doFingerprint(find lookupFunc) *drivers.Fingerprint {
 	// disable if non-root or non-linux systems
 	if util.IsLinuxOS() && !utils.IsUnixRoot() {
 		return failure(drivers.HealthStateUndetected, drivers.DriverRequiresRootMessage)
 	}
 
 	// inspect nsenter binary
-	nPath, nErr := exec.LookPath("nsenter")
+	nPath, nErr := find("nsenter")
 	switch {
 	case os.IsNotExist(nErr):
 		return failure(drivers.HealthStateUndetected, "nsenter executable not found")
@@ -145,7 +147,7 @@ func (p *Plugin) doFingerprint() *drivers.Fingerprint {
 	}
 
 	// inspect unshare binary
-	uPath, uErr := exec.LookPath("unshare")
+	uPath, uErr := find("unshare")
 	switch {
 	case os.IsNotExist(uErr):
 		return failure(drivers.HealthStateUndetected, "unshare executable not found")
