@@ -44,15 +44,31 @@ func (w *execWaiter) Wait() WaitCh {
 func (w *execWaiter) wait(ch chan<- *drivers.ExitResult) {
 	ps, err := w.p.Wait()
 
-	var signal = syscall.Signal(0)
+	var (
+		signal = 0
+		code   = ps.ExitCode()
+	)
+
+	if code == 0 && err == nil {
+		ch <- &drivers.ExitResult{
+			ExitCode: 0,
+			Signal:   0,
+			Err:      nil,
+		}
+		return
+	}
+
 	if ps.Sys() != nil {
 		status := ps.Sys().(syscall.WaitStatus)
-		signal = status.Signal()
+		if status.Signaled() {
+			signal = int(status.Signal())
+			code = 128 + signal // preserve bash-ism
+		}
 	}
 
 	ch <- &drivers.ExitResult{
-		ExitCode: ps.ExitCode(),
-		Signal:   int(signal),
+		ExitCode: code,
+		Signal:   signal,
 		Err:      err,
 	}
 }

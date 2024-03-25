@@ -20,7 +20,6 @@ import (
 	"github.com/hashicorp/go-set/v2"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources/process"
-	"github.com/hashicorp/nomad/helper/subproc"
 	"github.com/hashicorp/nomad/helper/users/dynamic"
 	"golang.org/x/sys/unix"
 )
@@ -252,6 +251,27 @@ func flatten(user, home string, env map[string]string) []string {
 	return result
 }
 
+func self() string {
+	executable, err := os.Executable()
+	if err != nil {
+		msg := fmt.Sprintf("plugin: unable to find executable: %v", err)
+		panic(msg)
+	}
+
+	// when running unit tests we must fix the grandparent of the output
+	// executable to allow execution as other users
+	if strings.HasSuffix(executable, ".test") {
+		parent := filepath.Dir(executable)
+		gparent := filepath.Dir(parent)
+		if err = os.Chmod(gparent, 0755); err != nil {
+			msg := fmt.Sprintf("plugin: unable to chmod: %v", err)
+			panic(msg)
+		}
+	}
+
+	return executable
+}
+
 func (e *exe) parameters(uid, gid int) []string {
 	var result []string
 
@@ -274,13 +294,13 @@ func (e *exe) parameters(uid, gid int) []string {
 		"--mount-proc",
 		"--fork",
 		"--kill-child=SIGKILL",
-		"--setuid", strconv.Itoa(uid),
-		"--setgid", strconv.Itoa(gid),
+		fmt.Sprintf("--setuid=%d", uid),
+		fmt.Sprintf("--setgid=%d", gid),
 		"--",
 	)
 
-	// setup ourself 'nomad exec2-shim' for unveil
-	result = append(result, subproc.Self(), SubCommand)
+	// setup ourself '$0 exec2-shim' for unveil
+	result = append(result, self(), SubCommand)
 	result = append(result, strconv.FormatBool(e.opts.UnveilDefaults))
 	result = append(result, e.opts.UnveilPaths...)
 	result = append(result, "--")
@@ -315,8 +335,6 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.
 func (e *exe) constrain() error {
 	// set cpu bandwidth
 	_ = e.writeCG("cpu.max", fmt.Sprintf("%d 100000", e.env.CPUBandwidth))
-
-	// will want to set burst one day, but in coordination with nomad
 
 	// set memory limits
 	switch e.env.MemoryMax {

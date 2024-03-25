@@ -63,7 +63,7 @@ func init() {
 		cmdpath, err := exec.LookPath(commands[0])
 		if err != nil {
 			subproc.Print("failed to locate command %q: %v", commands[0], err)
-			return subproc.ExitFailure
+			return subproc.ExitNotRunnable
 		}
 
 		// invoke the following commands (nsenter, unshare, the task ...)

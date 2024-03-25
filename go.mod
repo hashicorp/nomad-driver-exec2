@@ -12,6 +12,8 @@ require (
 	oss.indeed.com/go/libtime v1.6.0
 )
 
+require github.com/docker/distribution v2.8.3+incompatible
+
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/LK4D4/joincontext v0.0.0-20171026170139-1724345da6d5 // indirect
@@ -24,6 +26,7 @@ require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
+	github.com/brianvoe/gofakeit/v6 v6.20.1 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/container-storage-interface/spec v1.7.0 // indirect
 	github.com/containerd/containerd v1.7.13 // indirect
@@ -43,6 +46,7 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gojuno/minimock/v3 v3.0.6 // indirect
+	github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
