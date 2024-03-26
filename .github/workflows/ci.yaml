@@ -42,4 +42,7 @@ jobs:
       - name: Run Go Test
         run: |
           make vet
-          make test
+          sudo -E env "PATH=$PATH" make test
+permissions:
+  contents: read
+  id-token: write
