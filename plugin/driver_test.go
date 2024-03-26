@@ -382,3 +382,17 @@ func Test_doFingerprint_missing_unshare(t *testing.T) {
 	must.Eq(t, drivers.HealthStateUndetected, fp.Health)
 	must.Eq(t, "unshare executable not found", fp.HealthDescription)
 }
+
+func Test_tools(t *testing.T) {
+	t.Run("unshare", func(t *testing.T) {
+		path, err := exec.LookPath("unshare")
+		must.NoError(t, err)
+		t.Log("path to unshare is: " + path)
+	})
+
+	t.Run("nsenter", func(t *testing.T) {
+		path, err := exec.LookPath("nsenter")
+		must.NoError(t, err)
+		t.Log("path to nsenter is: " + path)
+	})
+}

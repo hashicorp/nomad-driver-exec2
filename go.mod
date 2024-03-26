@@ -2,15 +2,13 @@ module github.com/hashicorp/nomad-driver-exec2
 
 go 1.22
 
-replace (
-	// maintain the go-metrics version required by nomad
-	github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
-)
+// maintain the go-metrics version required by nomad
+replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
 
 require (
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-set/v2 v2.1.0
-	github.com/hashicorp/nomad v1.7.0-beta.2.0.20240326130241-77889a16fb93 // TODO(shoenig) use v1.8
+	github.com/hashicorp/nomad v1.7.0-beta.2.0.20240326173306-bd2a80913510 // TODO(shoenig) use v1.8
 	github.com/shoenig/go-landlock v1.2.0
 	github.com/shoenig/test v1.7.1
 	golang.org/x/sys v0.18.0

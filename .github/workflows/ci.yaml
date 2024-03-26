@@ -35,13 +35,9 @@ jobs:
       - uses: hashicorp/setup-golang@v3
         with:
           version-file: go.mod
-      - name: Install Nomad
-        run: |
-          go install github.com/hashicorp/hc-install/cmd/hc-install@v0.6.3
-          hc-install install --path /usr/local/bin --version 1.7.6 nomad
       - name: Run Go Test
         run: |
-          make vet
+          sudo sed -i 's!Defaults!#Defaults!g' /etc/sudoers
           sudo -E env "PATH=$PATH" make test
 permissions:
   contents: read

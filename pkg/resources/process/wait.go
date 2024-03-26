@@ -58,7 +58,7 @@ func (w *execWaiter) wait(ch chan<- *drivers.ExitResult) {
 		return
 	}
 
-	if ps.Sys() != nil {
+	if ps != nil && ps.Sys() != nil {
 		status := ps.Sys().(syscall.WaitStatus)
 		if status.Signaled() {
 			signal = int(status.Signal())
