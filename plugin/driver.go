@@ -38,9 +38,6 @@ type Plugin struct {
 	// config is the plugin configuration set by the SetConfig RPC
 	config *Config
 
-	// driverConfig is the driver-client configuration from Nomad
-	// driverConfig *base.ClientDriverConfig
-
 	// tasks is the in-memory datastore mapping IDs to handles
 	tasks task.Store
 
@@ -375,10 +372,14 @@ func (p *Plugin) DestroyTask(taskID string, force bool) error {
 	return err
 }
 
-// InspectTask is not yet implemented.
-func (*Plugin) InspectTask(taskID string) (*drivers.TaskStatus, error) {
-	// TODO
-	return nil, errors.New("InspectTask is not implemented (yet)")
+// InspectTask returns status information for the task associated with the
+// given taskID.
+func (p *Plugin) InspectTask(taskID string) (*drivers.TaskStatus, error) {
+	handle, exists := p.tasks.Get(taskID)
+	if !exists {
+		return nil, drivers.ErrTaskNotFound
+	}
+	return handle.Status(), nil
 }
 
 // TaskStats starts a background goroutine that produces TaskResourceUsage
