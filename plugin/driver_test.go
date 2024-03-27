@@ -4,10 +4,13 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -71,9 +74,62 @@ var debugExitResult = func(result *drivers.ExitResult) must.Setting {
 	)
 }
 
-func TestRun_basics(t *testing.T) {
+func TestBasic_StartWait(t *testing.T) {
 	ci.Parallel(t)
 
+	pluginConfig := &Config{
+		UnveilDefaults: true,
+	}
+
+	taskConfig := &TaskConfig{
+		Command: "sleep",
+		Args:    []string{"infinity"},
+	}
+
+	allocID := uuid.Generate()
+	taskName := "start_wait_test_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "nomad-80000",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	harness := newTestHarness(t, pluginConfig)
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	cleanup := harness.MkAllocDir(task, true)
+	defer cleanup()
+
+	// Start the task
+	_, _, err := harness.StartTask(task)
+	must.NoError(t, err)
+
+	defer func() {
+		_ = harness.DestroyTask(task.ID, true)
+	}()
+
+	// Attempt to wait on task
+	waitCh, err := harness.WaitTask(context.Background(), task.ID)
+	must.NoError(t, err)
+
+	select {
+	case <-waitCh:
+		t.Fatal("task should not exit")
+	case <-time.After(10 * time.Second):
+	}
+}
+
+func TestBasic_cases(t *testing.T) {
+	ctests.RequireRoot(t)
+
+	ci.Parallel(t)
+
+	// various tests making assertions on exit code and log outputs
+	//
 	// note: all tasks must be batch and complete in under 10 seconds
 
 	cases := []struct {
@@ -91,7 +147,9 @@ func TestRun_basics(t *testing.T) {
 		unveilPaths    []string
 
 		// expectations
-		exp *drivers.ExitResult
+		exp      *drivers.ExitResult
+		stdoutRe *regexp.Regexp
+		stderrRe *regexp.Regexp
 	}{
 		// run 'env' with default unveil paths
 		{
@@ -100,6 +158,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "env",
 			unveilDefaults: true,
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`USER=nomad-80000`),
 		},
 		{
 			name:           "nobody user",
@@ -107,6 +166,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "env",
 			unveilDefaults: true,
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`USER=nobody`),
 		},
 		{
 			name:           "root user",
@@ -114,6 +174,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "env",
 			unveilDefaults: true,
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`USER=root`),
 		},
 		// run 'cat /etc/passwd' with default unveil paths
 		// (e.g. not even root can access it)
@@ -124,6 +185,7 @@ func TestRun_basics(t *testing.T) {
 			unveilDefaults: true,
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`cat: /etc/passwd: Permission denied`),
 		},
 		{
 			name:           "read /etc/passwd as nobody using defaults",
@@ -132,6 +194,7 @@ func TestRun_basics(t *testing.T) {
 			unveilDefaults: true,
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`cat: /etc/passwd: Permission denied`),
 		},
 		{
 			name:           "read /etc/passwd as root using defaults",
@@ -140,6 +203,7 @@ func TestRun_basics(t *testing.T) {
 			unveilDefaults: true,
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`cat: /etc/passwd: Permission denied`),
 		},
 		// run 'cat /etc/passwd' with custom unveil paths in plugin config
 		// allowing any task to read /etc/passwd
@@ -151,6 +215,7 @@ func TestRun_basics(t *testing.T) {
 			unveilPaths:    []string{"r:/etc/passwd"},
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
 		{
 			name:           "read /etc/passwd as nobody using custom paths via plugin",
@@ -160,6 +225,7 @@ func TestRun_basics(t *testing.T) {
 			unveilPaths:    []string{"r:/etc/passwd"},
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
 		{
 			name:           "read /etc/passwd as root using custom paths via plugin",
@@ -169,6 +235,7 @@ func TestRun_basics(t *testing.T) {
 			unveilPaths:    []string{"r:/etc/passwd"},
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
 		// run 'cat /etc/passwd' with custom unveil paths in task config and allow
 		// doing so in plugin config
@@ -181,6 +248,7 @@ func TestRun_basics(t *testing.T) {
 			unveil:         []string{"r:/etc/passwd"},
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
 		{
 			name:           "read /etc/passwd as nobody using custom paths via task",
@@ -191,6 +259,7 @@ func TestRun_basics(t *testing.T) {
 			unveil:         []string{"r:/etc/passwd"},
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
 		{
 			name:           "read /etc/passwd as root using custom paths via task",
@@ -201,6 +270,7 @@ func TestRun_basics(t *testing.T) {
 			unveil:         []string{"r:/etc/passwd"},
 			args:           []string{"/etc/passwd"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
 		// try to execute a non-existent file
 		{
@@ -209,6 +279,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "/usr/bin/doesnotexist",
 			unveilDefaults: true,
 			exp:            &drivers.ExitResult{ExitCode: 127},
+			stderrRe:       regexp.MustCompile(`failed to locate command "/usr/bin/doesnotexist": exec: "/usr/bin/doesnotexist": stat /usr/bin/doesnotexist: no such file or directory`),
 		},
 		// try to execute non-executable file
 		{
@@ -218,6 +289,7 @@ func TestRun_basics(t *testing.T) {
 			unveilDefaults: true,
 			unveilPaths:    []string{"rx:/etc"},
 			exp:            &drivers.ExitResult{ExitCode: 127},
+			stderrRe:       regexp.MustCompile(`failed to locate command "/etc/os-release": exec: "/etc/os-release": permission denied`),
 		},
 		// disable unveil_defaults and commands in /bin, /usr/bin should no
 		// longer work
@@ -227,6 +299,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
 			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`failed to exec command "/usr/bin/env": permission denied`),
 		},
 		{
 			name:           "run 'env' as nobody without default paths",
@@ -234,6 +307,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
 			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`failed to exec command "/usr/bin/env": permission denied`),
 		},
 		{
 			name:           "run 'env' as root without default paths",
@@ -241,6 +315,7 @@ func TestRun_basics(t *testing.T) {
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
 			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`failed to exec command "/usr/bin/env": permission denied`),
 		},
 		// write to task directory
 		{
@@ -267,6 +342,40 @@ func TestRun_basics(t *testing.T) {
 			args:           []string{"/etc/hosts", "${NOMAD_SECRETS_DIR}"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
 		},
+		{
+			name:           "id dynamic",
+			user:           "nomad-89000",
+			command:        "id",
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`uid=89000 gid=89000 groups=89000`),
+		},
+		{
+			name:           "id nobody",
+			user:           "nobody",
+			command:        "id",
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`uid=65534 gid=65534 groups=65534`),
+		},
+		{
+			name:           "id root",
+			user:           "root",
+			command:        "id",
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`uid=0 gid=0 groups=0`),
+		},
+		{
+			name:           "pid namespace",
+			user:           "root",
+			command:        "ps",
+			args:           []string{"aux"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc", "r:/etc/passwd"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`root\s+1.+ps aux`), // out ps is pid 1
+		},
 	}
 
 	for _, tc := range cases {
@@ -284,7 +393,7 @@ func TestRun_basics(t *testing.T) {
 			}
 
 			allocID := uuid.Generate()
-			taskName := "basics_test_" + uuid.Short()
+			taskName := "test_cases_" + uuid.Short()
 
 			task := &drivers.TaskConfig{
 				User:      tc.user,
@@ -317,8 +426,48 @@ func TestRun_basics(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatalf("timeout")
 			}
+
+			// Assert logs contain expected outputs
+			checkLogs(t, task, tc.stdoutRe, tc.stderrRe)
 		})
 	}
+}
+
+func checkLogs(t *testing.T, task *drivers.TaskConfig, outRe, errRe *regexp.Regexp) {
+	if outRe == nil && errRe == nil {
+		return
+	}
+	stdout, stderr := getLogs(t, task)
+	if outRe != nil {
+		must.RegexMatch(t, outRe, stdout)
+	}
+	if errRe != nil {
+		must.RegexMatch(t, errRe, stderr)
+	}
+}
+
+// getLogs will wait on the FIFO of the task to be flushed and return the
+// standard out / standard error log content when available
+func getLogs(t *testing.T, task *drivers.TaskConfig) (string, string) {
+	outfile := filepath.Join(filepath.Dir(task.StdoutPath), fmt.Sprintf("%s.stdout.0", task.Name))
+	errfile := filepath.Join(filepath.Dir(task.StderrPath), fmt.Sprintf("%s.stderr.0", task.Name))
+
+	for range 20 {
+		outBytes, _ := os.ReadFile(outfile)
+		stdout := string(bytes.TrimSpace(outBytes))
+
+		errBytes, _ := os.ReadFile(errfile)
+		stderr := string(bytes.TrimSpace(errBytes))
+
+		if stdout != "" || stderr != "" {
+			return stdout, stderr
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	t.Fatalf("no content in stdout or stderr logs (%s, %s)", outfile, errfile)
+	return "", ""
 }
 
 func Test_doFingerprint_normal(t *testing.T) {
