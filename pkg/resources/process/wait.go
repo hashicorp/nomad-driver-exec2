@@ -6,13 +6,9 @@ package process
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/hashicorp/nomad/plugins/drivers"
-	"golang.org/x/sys/unix"
 )
 
 type WaitCh chan *drivers.ExitResult
@@ -21,27 +17,27 @@ type Waiter interface {
 	Wait() WaitCh
 }
 
-// WaitOnChild makes use of the os.Process handle to wait on the child process.
+// WaitProc makes use of the os.Process handle to wait on the child process.
 // This is the handle returned from directly launching the process through
 // the exec package.
-func WaitOnChild(p *os.Process) Waiter {
-	return &execWaiter{
+func WaitProc(p *os.Process) Waiter {
+	return &procWaiter{
 		p:  p,
 		ch: make(chan *drivers.ExitResult),
 	}
 }
 
-type execWaiter struct {
+type procWaiter struct {
 	p  *os.Process
 	ch chan *drivers.ExitResult
 }
 
-func (w *execWaiter) Wait() WaitCh {
+func (w *procWaiter) Wait() WaitCh {
 	go w.wait(w.ch)
 	return w.ch
 }
 
-func (w *execWaiter) wait(ch chan<- *drivers.ExitResult) {
+func (w *procWaiter) wait(ch chan<- *drivers.ExitResult) {
 	ps, err := w.p.Wait()
 
 	var (
@@ -73,13 +69,10 @@ func (w *execWaiter) wait(ch chan<- *drivers.ExitResult) {
 	}
 }
 
-// WaitOnOrphan invokes the waitpid syscall on pid to wait on a process that
-// the driver no longer has a direct handle on.
-//
-// Note that while we could use os.FindProcess to attempt to restore the handle
-// of a live process, with waitpid we at least have a chance of recovering the
-// exit status of a recently deceased child.
-func WaitOnOrphan(pid int) Waiter {
+// WaitPID is able to wait on a given specific PID. We must lookup the
+// process and also send a signal(0) to make sure it is actually still alive
+// before waiting on it.
+func WaitPID(pid int) Waiter {
 	return &pidWaiter{
 		pid: pid,
 		ch:  make(chan *drivers.ExitResult),
@@ -97,63 +90,26 @@ func (w *pidWaiter) Wait() WaitCh {
 }
 
 func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
-	fd, err := openFD(w.pid)
-	if err != nil {
+	proc, _ := os.FindProcess(w.pid) // never errors on unix
+
+	// send a 0 signal to detect if the process is still alive
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		// TODO(shoenig): there is still a way to get the exit code and signal
+		// of a recently deceased process by reading /proc; we should look into
+		// that after Nomad 1.8 Beta since Client restarts are a thing that we
+		// support.
+		//
+		// See what the pledge driver is doing for inspiration in
+		// https://github.com/shoenig/nomad-pledge-driver/blob/v0.3.0/pkg/resources/process/wait.go#L82-L105
+		// and make sure it works correctly.
 		ch <- &drivers.ExitResult{
 			ExitCode: -1,
-			Err:      err,
+			Err:      fmt.Errorf("task is gone: %w", err),
 		}
 		return
 	}
 
-	pollFD := []unix.PollFd{{Fd: fd}}
-	const timeout = -1 // infinite
-
-	// wait for the orphaned child to die
-	// ignore the error; we expect it
-	_, _ = unix.Poll(pollFD, timeout)
-
-	// lookup exit code from /proc/<pid>/stat ?
-	code, err := codeFromStat(w.pid)
-	ch <- &drivers.ExitResult{
-		ExitCode: code,
-		Err:      err,
-	}
-}
-
-// codeFromStat reads the exit code of pid from /proc/<pid>/stat
-//
-// See `man proc`.
-// (52) exit_code  %d  (since Linux 3.5)
-func codeFromStat(pid int) (int, error) {
-	f := filepath.Join("/proc", strconv.Itoa(pid), "stat")
-	b, err := os.ReadFile(f)
-	if err != nil {
-		return 0, err
-	}
-	fields := strings.Fields(string(b))
-	if len(fields) < 52 {
-		return 0, fmt.Errorf("failed to read exit code from %q", f)
-	}
-	code, err := strconv.Atoi(fields[51])
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse exit code from %q", f)
-	}
-	if code > 255 {
-		// not sure why, read about waitpid
-		code -= 255
-	}
-	return code, nil
-}
-
-// open fd for pid using pidfd_open
-//
-// https://www.man7.org/linux/man-pages/man2/pidfd_open.2.html
-func openFD(pid int) (int32, error) {
-	const syscallNumber = 434
-	fd, _, err := syscall.Syscall(syscallNumber, uintptr(pid), uintptr(0), 0)
-	if err != 0 {
-		return 0, err
-	}
-	return int32(fd), nil
+	// from here we can just use the logic for waiting on an os.Process
+	waiter := &procWaiter{p: proc}
+	waiter.wait(ch)
 }

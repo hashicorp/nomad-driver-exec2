@@ -417,8 +417,14 @@ func (p *Plugin) SignalTask(taskID, signal string) error {
 
 // ExecTask is not yet implemented.
 func (*Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
-	// TODO
-	return nil, errors.New("ExecTask is not implemented (yet)")
+	// TODO(shoenig): implement this.
+	return nil, errors.New("ExecTask is not yet implemented")
+}
+
+// ExecTaskStreaming is not yet implemented.
+func (*Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
+	// TODO(shoenig): implement this.
+	return nil, errors.New("ExecTaskStreaming is not yet implemented")
 }
 
 func open(stdout, stderr string) (io.WriteCloser, io.WriteCloser, error) {

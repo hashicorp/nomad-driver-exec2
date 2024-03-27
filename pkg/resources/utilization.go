@@ -85,6 +85,14 @@ var (
 	once  sync.Once
 )
 
+// GetSpecs returns the MHz and Cores of the detected CPU.
+//
+// Tries to read accurate information out of /sys/devices before falling
+// back to /proc/cpuinfo.
+//
+// TODO(shoenig): we should probably get this from the Topology plumbed into
+// the driver - which did not exist for the pledge driver when this code was
+// originally written.
 func GetSpecs() *Specs {
 	once.Do(func() {
 		var speed int

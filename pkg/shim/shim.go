@@ -91,7 +91,7 @@ func Recover(pid int, env *Environment) ExecTwo {
 		pid:     pid,
 		env:     env,
 		opts:    nil, // already started, no use
-		waiter:  process.WaitOnOrphan(pid).Wait(),
+		waiter:  process.WaitPID(pid).Wait(),
 		signals: process.Signals(pid),
 		cpu:     new(resources.TrackCPU),
 	}
@@ -139,7 +139,7 @@ func (e *exe) Start(ctx context.Context) error {
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
 	e.signals = process.Signals(cmd.Process.Pid)
-	e.waiter = process.WaitOnChild(cmd.Process).Wait()
+	e.waiter = process.WaitProc(cmd.Process).Wait()
 
 	return nil
 }

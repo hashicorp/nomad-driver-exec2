@@ -12,7 +12,7 @@ import (
 	"github.com/shoenig/test/must"
 )
 
-func TestOrphan_Wait(t *testing.T) {
+func TestPID_Wait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -21,7 +21,7 @@ func TestOrphan_Wait(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "sleep", ".1s")
 	must.NoError(t, cmd.Start())
 
-	waitCh := WaitOnOrphan(cmd.Process.Pid).Wait()
+	waitCh := WaitPID(cmd.Process.Pid).Wait()
 	result := <-waitCh
 
 	must.Greater(t, 100*time.Millisecond, time.Since(start))
@@ -29,14 +29,14 @@ func TestOrphan_Wait(t *testing.T) {
 	must.Zero(t, result.ExitCode)
 }
 
-func TestOrphan_WaitFailure(t *testing.T) {
+func TestPID_WaitFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sleep", "abc") // exit 1
 	must.NoError(t, cmd.Start())
 
-	waitCh := WaitOnOrphan(cmd.Process.Pid).Wait()
+	waitCh := WaitPID(cmd.Process.Pid).Wait()
 	result := <-waitCh
 
 	must.NoError(t, result.Err)
