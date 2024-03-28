@@ -72,28 +72,6 @@ in the task definition of an `exec2` task.
 Similar to `exec` and other container runtimes, `exec2` makes use of cgroups
 for limiting the amount of CPU and RAM a task may consume.
 
-##### cpu
-
-Tasks can be limited in CPU resources by setting the `cpu` or `cores` values
-in the task `resources` block.
-
-  - `cpu` - (default: `100`) - limits the CPU bandwidth allowable for the task
-  to make use of in MHz, may not be used with `cores`
-
-  - `cores` - (optional) - specifies the number of CPU cores to reserve
-  exclusively for the task, may not be used with `cpu`
-
-##### memory
-
-Tasks can be limited in memory resources by setting `memory` and optionally the
-`memory_max` values in the task `resources` block.
-
-  - `memory` - (default: `300`) - specifies the memory required in MB
-
-  - `memory_max` - (optional) - specifies the maximum memory the task may use
-  if the client has excess memory capacity and [memory oversupscription](https://developer.hashicorp.com/nomad/docs/job-specification/resources#memory-oversubscription)
-  is enabled for the cluster/node pool.
-
 ### Configuration
 
 #### Plugin Configuration
@@ -133,9 +111,12 @@ plugin "nomad-driver-exec2" {
 
 #### Task Configuration
 
+##### config
+
 Task configuration for an `exec2` task includes setting a `command`, `args` for
 the command, and additional `unveil` paths if `unveil_by_task` is enabled in
 plugin configuration.
+
 
 ```hcl
 config {
@@ -151,6 +132,28 @@ config {
 
   - `unveil` - (optional) - list of additional filesystem paths to provide
   access to the task (requires `unveil_by_task` in plugin config)
+
+##### cpu
+
+Tasks can be limited in CPU resources by setting the `cpu` or `cores` values
+in the task `resources` block.
+
+  - `cpu` - (default: `100`) - limits the CPU bandwidth allowable for the task
+  to make use of in MHz, may not be used with `cores`
+
+  - `cores` - (optional) - specifies the number of CPU cores to reserve
+  exclusively for the task, may not be used with `cpu`
+
+##### memory
+
+Tasks can be limited in memory resources by setting `memory` and optionally the
+`memory_max` values in the task `resources` block.
+
+  - `memory` - (default: `300`) - specifies the memory required in MB
+
+  - `memory_max` - (optional) - specifies the maximum memory the task may use
+  if the client has excess memory capacity and [memory oversupscription](https://developer.hashicorp.com/nomad/docs/job-specification/resources#memory-oversubscription)
+  is enabled for the cluster/node pool.
 
 ### Attributes
 
