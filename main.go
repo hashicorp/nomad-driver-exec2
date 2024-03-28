@@ -13,6 +13,6 @@ func main() {
 	plugins.Serve(factory)
 }
 
-func factory(logger hclog.Logger) interface{} {
+func factory(logger hclog.Logger) any {
 	return plugin.New(logger)
 }
