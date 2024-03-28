@@ -41,4 +41,4 @@ jobs:
           sudo -E env "PATH=$PATH" make test
 permissions:
   contents: read
-  id-token: write
+

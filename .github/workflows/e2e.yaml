@@ -52,3 +52,6 @@ jobs:
       - name: Basic Tests
         run: |
           go test -tags=e2e -count=1 -v ./e2e
+permissions:
+  contents: read
+
