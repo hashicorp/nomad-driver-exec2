@@ -192,7 +192,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	handle := drivers.NewTaskHandle(handleVersion)
 	handle.Config = config
 
-	// open descripters for the task's stdout and stderr
+	// open descriptors for the task's stdout and stderr
 	stdout, stderr, err := open(config.StdoutPath, config.StderrPath)
 	if err != nil {
 		p.logger.Error("failed to open log files", "error", err)

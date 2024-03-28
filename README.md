@@ -1,9 +1,11 @@
 # Nomad exec2 Driver
 
-The `exec2` Nomad task driver offers improvements over the original `exec`
-task driver historically built into the Nomad binary. `exec2` makes use of
-modern Linux kernel features such as the Landlock LSM and cgroups v2 to provide
-filesystem and system resource isolation.
+The `exec2` task driver plugin is a modern alternative to Nomad's original
+`exec` and `raw_exec` drivers. It offers a security model optimized for running
+'ordinary' processes with very low startup times and minimal overhead in terms
+of CPU and memory utilization. `exec2` leverages kernel features such as the
+[Landlock LSM](https://docs.kernel.org/security/landlock.html), cgroups v2, and
+ordinary file system permissions.
 
 ### Requirements
 
@@ -35,6 +37,8 @@ job "env" {
 
 #### Filesystem Isolation
 
+##### landlock
+
 The `exec2` driver makes use of [`go-landlock`](https://github.com/shoenig/go-landlock)
 for providing filesystem isolation, making the host filesystem unreachable except
 where explicitly allowed.
@@ -53,10 +57,42 @@ respectively. e.g.,
   - `rx:/opt/bin/application` - read and execute a specific application
   - `wc:/var/log` - write and create files in `/var/log`
 
+##### dynamic workload users
+
+While landlock prevents tasks from accessing the host filesystem, Nomad 1.8
+introduces `dynamic workload users` which enable tasks to be run as a PID/GID
+that is not assigned to any user. This provides protection from non-root users
+getting access inside the task and allocation directories created for the task.
+
+To make use of a dynamic workload user, simply leave the `user` field blank
+in the task definition of an `exec2` task.
+
 #### Resource Isolation
 
 Similar to `exec` and other container runtimes, `exec2` makes use of cgroups
 for limiting the amount of CPU and RAM a task may consume.
+
+##### cpu
+
+Tasks can be limited in CPU resources by setting the `cpu` or `cores` values
+in the task `resources` block.
+
+  - `cpu` - (default: `100`) - limits the CPU bandwidth allowable for the task
+  to make use of in MHz, may not be used with `cores`
+
+  - `cores` - (optional) - specifies the number of CPU cores to reserve
+  exclusively for the task, may not be used with `cpu`
+
+##### memory
+
+Tasks can be limited in memory resources by setting `memory` and optionally the
+`memory_max` values in the task `resources` block.
+
+  - `memory` - (default: `300`) - specifies the memory required in MB
+
+  - `memory_max` - (optional) - specifies the maximum memory the task may use
+  if the client has excess memory capacity and [memory oversupscription](https://developer.hashicorp.com/nomad/docs/job-specification/resources#memory-oversubscription)
+  is enabled for the cluster/node pool.
 
 ### Configuration
 
