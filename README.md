@@ -61,6 +61,11 @@ respectively. e.g.,
   - `rx:/opt/bin/application` - read and execute a specific application
   - `wc:/var/log` - write and create files in `/var/log`
 
+This style of permission control is modeled after the `uveil` system call
+introduced by the OpenBSD project. In configuration parameters we refer to the
+"unveil"-ing of filesystem paths as `exec2` is leveraging landlock to emulate
+the semantics of `unveil`.
+
 ##### dynamic workload users
 
 While landlock prevents tasks from accessing the host filesystem, Nomad 1.8
