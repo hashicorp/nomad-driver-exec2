@@ -4,11 +4,41 @@
 package process
 
 import (
+	"fmt"
 	"syscall"
 	"testing"
 
 	"github.com/shoenig/test/must"
 )
+
+func TestSignals_Send_error(t *testing.T) {
+	cases := []struct {
+		pid int
+		exp string
+	}{
+		{
+			pid: -1,
+			exp: "not a valid PID to signal: -1",
+		},
+		{
+			pid: 0,
+			exp: "not a valid PID to signal: 0",
+		},
+		{
+			pid: 1,
+			exp: "not a valid PID to signal: 1",
+		},
+	}
+
+	for _, tc := range cases {
+		name := fmt.Sprintf("pid(%d)", tc.pid)
+		t.Run(name, func(t *testing.T) {
+			s := &system{pid: tc.pid}
+			result := s.Send("none")
+			must.EqError(t, result, tc.exp)
+		})
+	}
+}
 
 func TestSignals_parse(t *testing.T) {
 	cases := []struct {

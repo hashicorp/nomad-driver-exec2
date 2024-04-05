@@ -4,6 +4,7 @@
 package process
 
 import (
+	"fmt"
 	"strings"
 	"syscall"
 )
@@ -56,7 +57,10 @@ type system struct {
 }
 
 func (s *system) Send(signal string) error {
+	if s.pid <= 1 {
+		return fmt.Errorf("not a valid PID to signal: %d", s.pid)
+	}
 	sig := parse(signal)
-	// send the signal to the process group
-	return syscall.Kill(-s.pid, sig)
+	group := -s.pid // signal the process group
+	return syscall.Kill(group, sig)
 }
