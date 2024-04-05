@@ -220,6 +220,7 @@ func (e *exe) writeCG(file, content string) error {
 	if _, err = io.Copy(f, strings.NewReader(content)); err != nil {
 		return fmt.Errorf("failed to write pid to cgroup file: %w", err)
 	}
+
 	return f.Close()
 }
 

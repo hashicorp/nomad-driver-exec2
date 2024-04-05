@@ -308,12 +308,12 @@ func (p *Plugin) RecoverTask(handle *drivers.TaskHandle) error {
 	return nil
 }
 
-// WaitTask waits on the task to reach completion - whether by terminating
-// gracefully and setting an exit code or by being rudely interrupted.
-//
-// Note that WaitTask must be idempotent - it may be called multiple times for
-// a single live instance of a task (e.g. waiting on restart, etc.)
+// WaitTask returns a channel upon which callers may wait for the task to exit
+// and produce a drivers.ExitResult.
 func (p *Plugin) WaitTask(ctx context.Context, taskID string) (<-chan *drivers.ExitResult, error) {
+	// note that WaitTask must be idempotent - it may be called multiple times
+	// for a single live instance of a task (e.g. waiting on restart, etc.)
+
 	p.logger.Trace("waiting on task", "id", taskID)
 
 	handle, exists := p.tasks.Get(taskID)
