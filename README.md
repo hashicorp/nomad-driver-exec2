@@ -161,7 +161,7 @@ Tasks can be limited in memory resources by setting `memory` and optionally the
   - `memory` - (default: `300`) - specifies the memory required in MB
 
   - `memory_max` - (optional) - specifies the maximum memory the task may use
-  if the client has excess memory capacity and [memory oversupscription](https://developer.hashicorp.com/nomad/docs/job-specification/resources#memory-oversubscription)
+  if the client has excess memory capacity and [memory oversubscription](https://developer.hashicorp.com/nomad/docs/job-specification/resources#memory-oversubscription)
   is enabled for the cluster/node pool.
 
 ### Attributes
