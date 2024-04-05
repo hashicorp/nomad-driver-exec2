@@ -293,8 +293,8 @@ func (p *Plugin) RecoverTask(handle *drivers.TaskHandle) error {
 
 	// re-create the environment for re-attachment
 	env := &shim.Environment{
-		Out:     util.NullCloser(nil),
-		Err:     util.NullCloser(nil),
+		Out:     util.NullCloser(io.Discard),
+		Err:     util.NullCloser(io.Discard),
 		Env:     handle.Config.Env,
 		TaskDir: handle.Config.TaskDir().Dir,
 		User:    handle.Config.User,
