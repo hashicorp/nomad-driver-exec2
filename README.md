@@ -9,10 +9,14 @@ ordinary file system permissions.
 
 ### Requirements
 
-- Ubuntu 22.04 / CentOS 9 or later
+- Linux 5.15+
 - Cgroups v2 enabled
 - Landlock LSM enabled
+- Commands `unshare` and `nsenter`
 - Nomad client running as root
+
+Recent mainstream Linux distributions such as Ubuntu 22.04 and RHEL 9 meet the
+requirements and are well supported.
 
 ### Example Jobs
 
