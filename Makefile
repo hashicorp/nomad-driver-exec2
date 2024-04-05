@@ -16,7 +16,7 @@ copywrite:
 compile: clean
 	@echo "==> Compile exec2 plugin"
 	mkdir -p $(NOMAD_PLUGIN_DIR)
-	go build -race -o $(NOMAD_PLUGIN_DIR)/nomad-driver-exec2
+	go build -race -trimpath -o $(NOMAD_PLUGIN_DIR)/nomad-driver-exec2
 
 .PHONY: e2e
 e2e:
