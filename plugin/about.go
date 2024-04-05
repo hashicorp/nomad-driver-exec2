@@ -30,8 +30,8 @@ var PluginID = loader.PluginID{
 // PluginConfig is the exec driver factory function registered in the
 // plugin catalog.
 var PluginConfig = &loader.InternalPluginConfig{
-	Config:  map[string]interface{}{},
-	Factory: func(_ context.Context, l hclog.Logger) interface{} { return New(l) },
+	Config:  make(map[string]any),
+	Factory: func(_ context.Context, l hclog.Logger) any { return New(l) },
 }
 
 var info = &base.PluginInfoResponse{
