@@ -63,7 +63,7 @@ type ExecTwo interface {
 	// Stats returns current resource utilization.
 	//
 	// Must only be called after Start.
-	Stats() resources.Utilization
+	Stats() *resources.Utilization
 
 	// Signal [kill()] the process.
 	//
@@ -167,7 +167,7 @@ func (e *exe) Stop(signal string, timeout time.Duration) error {
 	return err
 }
 
-func (e *exe) Stats() resources.Utilization {
+func (e *exe) Stats() *resources.Utilization {
 	memCurrentS, _ := e.readCG("memory.current")
 	memCurrent, _ := strconv.Atoi(memCurrentS)
 
@@ -184,7 +184,7 @@ func (e *exe) Stats() resources.Utilization {
 	specs := resources.GetSpecs()
 	ticks := (.01 * totalPct) * resources.Percent(specs.Ticks()/specs.Cores)
 
-	return resources.Utilization{
+	return &resources.Utilization{
 		// memory stats
 		Memory: uint64(memCurrent),
 		Swap:   uint64(swapCurrent),
