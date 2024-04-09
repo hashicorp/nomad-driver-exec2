@@ -121,6 +121,9 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to open cgroup for descriptor: %w", err)
 	}
 
+	// close the cgroup descriptor after start or failure
+	defer cleanup()
+
 	// set resource constraints
 	if err = e.constrain(); err != nil {
 		return fmt.Errorf("failed to write cgroup constraints: %w", err)
@@ -131,10 +134,6 @@ func (e *exe) Start(ctx context.Context) error {
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
-
-	// close the cgroup descriptor after start
-	// avoid using defer because we do not need this open during Wait()
-	cleanup()
 
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
