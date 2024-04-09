@@ -433,6 +433,9 @@ func TestFunctional_cases(t *testing.T) {
 				t.Fatalf("timeout")
 			}
 
+			// allow log collection to happen
+			time.Sleep(3 * time.Second)
+
 			// Assert logs contain expected outputs
 			checkLogs(t, task, tc.stdoutRe, tc.stderrRe)
 		})
@@ -469,7 +472,7 @@ func getLogs(t *testing.T, task *drivers.TaskConfig) (string, string) {
 			return stdout, stderr
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 
 	t.Fatalf("no content in stdout or stderr logs (%s, %s)", outfile, errfile)
