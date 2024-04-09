@@ -91,6 +91,58 @@ reading system TLS certificates, executing programs in `/bin`, `/usr/bin`, and
 accessing shared object files. The exact set of default paths is system
 dependent, and can be disabled or customized in plugin config.
 
+The default set of default paths are listed below. These paths are enabled only
+if they are found to exist at the time of the task launching.
+
+##### shared objects
+
+- `/dev/null` (read, write)
+- `/lib` (read, execute)
+- `/lib64` (read, execute)
+- `/usr/lib` (read, execute)
+- `/usr/libexec` (read, execute)
+- `/usr/local/lib` (read, execute)
+- `/usr/local/lib64` (read, execute)
+- `/etc/ld.so.conf` (read)
+- `/etc/ld.so.cache` (read)
+- `/etc/ld.so.conf.d` (read)
+
+##### io, common
+
+- `/tmp` (read, write, create)
+- `/dev/full` (read, write)
+- `/dev/zero` (read)
+- `/dev/fd` (read)
+- `/dev/stdin` (read, write)
+- `/dev/stdout` (read, write)
+- `/dev/urandom` (read)
+- `/dev/log` (write)
+- `/usr/share/locale` (read)
+- `/proc/self/cmdline` (read)
+- `/usr/share/zoneinfo` (read)
+- `/usr/share/common-licenses` (read)
+- `/proc/sys/kernel/ngroups_max` (read)
+- `/proc/sys/kernel/cap_last_cap` (read)
+- `/proc/sys/vm/overcommit_memory` (read)
+
+##### dns
+
+- `/etc/hosts` (read)
+- `/hostname` (read)
+- `/etc/services` (read)
+- `/etc/protocols` (read)
+- `/etc/resolv.conf` (read)
+
+##### certificates
+
+- `/etc/ssl/certs` (read)
+- `/etc/pki/tls/certs` (read)
+- `/sys/etc/security/cacerts` (read)
+- `/etc/ssl/ca-bundle.pem` (read)
+- `/etc/pki/tls/cacert.pem` (read)
+- `/etc/pki/ca-trust-extracted/pem/tls-ca-bundle.pem` (read)
+- `/etc/ssl/cert.pem` (read)
+
 Additional allowable paths can be specified at the plugin level, which applies
 to all tasks making use of the `exec2` driver, or at the task level, which will
 apply specifically to each task.
