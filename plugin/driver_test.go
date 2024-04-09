@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"testing"
 	"time"
 
@@ -40,6 +41,9 @@ func newTestHarness(t *testing.T, pluginConfig *Config) *dtests.DriverHarness {
 	// set initial fingerprint
 	plugin.doFingerprint(exec.LookPath)
 
+	// configure cgroups controllers
+	cgroupslib.Init(logger, fmt.Sprintf("0-%d", runtime.GOMAXPROCS(0)))
+
 	// create a harness to run our plugin
 	return dtests.NewDriverHarness(t, plugin)
 }
@@ -48,6 +52,7 @@ func basicResources(allocID, taskName string) *drivers.Resources {
 	if allocID == "" || taskName == "" {
 		panic("test: allocID and taskName must be set")
 	}
+
 	return &drivers.Resources{
 		NomadResources: &structs.AllocatedTaskResources{
 			Memory: structs.AllocatedMemoryResources{
@@ -74,7 +79,7 @@ var debugExitResult = func(result *drivers.ExitResult) must.Setting {
 	)
 }
 
-func TestBasic_StartWait(t *testing.T) {
+func TestFunctional_StartWait(t *testing.T) {
 	ci.Parallel(t)
 
 	pluginConfig := &Config{
@@ -123,7 +128,7 @@ func TestBasic_StartWait(t *testing.T) {
 	}
 }
 
-func TestBasic_cases(t *testing.T) {
+func TestFunctional_cases(t *testing.T) {
 	ctests.RequireRoot(t)
 
 	ci.Parallel(t)
