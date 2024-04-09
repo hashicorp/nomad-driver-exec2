@@ -28,8 +28,8 @@ job "env" {
       }
 
       resources {
-        cpu    = 10
-        memory = 10
+        cpu    = 100
+        memory = 32
       }
     }
   }

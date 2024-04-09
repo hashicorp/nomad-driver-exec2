@@ -31,8 +31,8 @@ job "ps" {
       }
 
       resources {
-        cpu    = 10
-        memory = 16
+        cpu    = 100
+        memory = 32
       }
     }
   }
