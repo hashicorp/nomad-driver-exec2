@@ -42,7 +42,8 @@ func newTestHarness(t *testing.T, pluginConfig *Config) *dtests.DriverHarness {
 	plugin.doFingerprint(exec.LookPath)
 
 	// configure cgroups controllers
-	must.NoError(t, cgroupslib.Init(logger, fmt.Sprintf("0-%d", runtime.GOMAXPROCS(0))))
+	procs := max(1, runtime.GOMAXPROCS(0)-1)
+	must.NoError(t, cgroupslib.Init(logger, fmt.Sprintf("0-%d", procs)))
 
 	// create a harness to run our plugin
 	return dtests.NewDriverHarness(t, plugin)
