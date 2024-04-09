@@ -28,7 +28,7 @@ const (
 // The argument format is as follows,
 //
 // 1. nomad            <- the executable name
-// 2. e2e-shim         <- this subcommand
+// 2. exec2-shim       <- this subcommand
 // 3. true/false       <- include default unveil paths
 // 4. [mode:path, ...] <- list of additional unveil paths
 // 5. --               <- sentinel between following commands
@@ -47,7 +47,7 @@ func init() {
 
 		// get the unveil paths and the rest of the command(s) to run
 		// from our command arguments
-		args := os.Args[3:] // chop off 'nomad e2e-shim <defaults>'
+		args := os.Args[3:] // chop off 'nomad exec2-shim <defaults>'
 		defaults := os.Args[2] == "true"
 		paths, commands := split(args)
 
