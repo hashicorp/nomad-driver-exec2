@@ -275,7 +275,7 @@ func self() string {
 func (e *exe) parameters(uid, gid int) []string {
 	var result []string
 
-	// setup nsenter if using bridge mode
+	// setup nsenter if task was assigned a network namespace
 	if net := e.env.Net; net != "" {
 		result = append(
 			result,
