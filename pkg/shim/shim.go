@@ -334,17 +334,24 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.
 // set resource constraints via cgroups
 func (e *exe) constrain() error {
 	// set cpu bandwidth
-	_ = e.writeCG("cpu.max", fmt.Sprintf("%d 100000", e.env.CPUBandwidth))
+	if err := e.writeCG("cpu.max", fmt.Sprintf("%d 100000", e.env.CPUBandwidth)); err != nil {
+		return err
+	}
 
 	// set memory limits
 	switch e.env.MemoryMax {
 	case 0:
-		_ = e.writeCG("memory.max", fmt.Sprintf("%d", e.env.Memory))
+		if err := e.writeCG("memory.max", fmt.Sprintf("%d", e.env.Memory)); err != nil {
+			return err
+		}
 	default:
-		_ = e.writeCG("memory.low", fmt.Sprintf("%d", e.env.Memory))
-		_ = e.writeCG("memory.max", fmt.Sprintf("%d", e.env.MemoryMax))
+		if err := e.writeCG("memory.low", fmt.Sprintf("%d", e.env.Memory)); err != nil {
+			return err
+		}
+		if err := e.writeCG("memory.max", fmt.Sprintf("%d", e.env.MemoryMax)); err != nil {
+			return err
+		}
 	}
-
 	return nil
 }
 
