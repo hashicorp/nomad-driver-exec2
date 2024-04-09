@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"testing"
 	"time"
 
@@ -40,6 +41,10 @@ func newTestHarness(t *testing.T, pluginConfig *Config) *dtests.DriverHarness {
 	// set initial fingerprint
 	plugin.doFingerprint(exec.LookPath)
 
+	// configure cgroups controllers
+	procs := max(1, runtime.GOMAXPROCS(0)-1)
+	must.NoError(t, cgroupslib.Init(logger, fmt.Sprintf("0-%d", procs)))
+
 	// create a harness to run our plugin
 	return dtests.NewDriverHarness(t, plugin)
 }
@@ -48,6 +53,7 @@ func basicResources(allocID, taskName string) *drivers.Resources {
 	if allocID == "" || taskName == "" {
 		panic("test: allocID and taskName must be set")
 	}
+
 	return &drivers.Resources{
 		NomadResources: &structs.AllocatedTaskResources{
 			Memory: structs.AllocatedMemoryResources{
@@ -74,7 +80,7 @@ var debugExitResult = func(result *drivers.ExitResult) must.Setting {
 	)
 }
 
-func TestBasic_StartWait(t *testing.T) {
+func TestFunctional_StartWait(t *testing.T) {
 	ci.Parallel(t)
 
 	pluginConfig := &Config{
@@ -123,7 +129,7 @@ func TestBasic_StartWait(t *testing.T) {
 	}
 }
 
-func TestBasic_cases(t *testing.T) {
+func TestFunctional_cases(t *testing.T) {
 	ctests.RequireRoot(t)
 
 	ci.Parallel(t)
@@ -427,6 +433,9 @@ func TestBasic_cases(t *testing.T) {
 				t.Fatalf("timeout")
 			}
 
+			// allow log collection to happen
+			time.Sleep(3 * time.Second)
+
 			// Assert logs contain expected outputs
 			checkLogs(t, task, tc.stdoutRe, tc.stderrRe)
 		})
@@ -463,7 +472,7 @@ func getLogs(t *testing.T, task *drivers.TaskConfig) (string, string) {
 			return stdout, stderr
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 
 	t.Fatalf("no content in stdout or stderr logs (%s, %s)", outfile, errfile)
