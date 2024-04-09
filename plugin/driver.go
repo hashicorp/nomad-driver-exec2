@@ -458,8 +458,9 @@ func netns(c *drivers.TaskConfig) string {
 func (p *Plugin) stats(ctx context.Context, ch chan<- *drivers.TaskResourceUsage, interval time.Duration, h *task.Handle) {
 	defer close(ch)
 
-	// Nomad client asks for 1 second intervals, but other drivers run a
-	// stats collector in the background on a much slower period.
+	// Nomad client asks for 1 second intervals. Our handle will cache results
+	// so as to not crush the kernel with scanning of cgroups, on a 10 second
+	// TTL for recorded values.
 
 	ticks, stop := libtime.SafeTimer(interval)
 	defer stop()

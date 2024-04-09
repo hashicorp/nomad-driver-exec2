@@ -16,6 +16,11 @@ import (
 	"oss.indeed.com/go/libtime"
 )
 
+type latestStats struct {
+	timestamp   time.Time
+	utilization *resources.Utilization
+}
+
 // A Handle is used by the driver plugin to keep track of active tasks.
 //
 // Handle must be comletetly thread-safe; all operations must go through
@@ -31,6 +36,7 @@ type Handle struct {
 	result    *drivers.ExitResult
 	clock     libtime.Clock
 	pid       int
+	stats     latestStats
 }
 
 func NewHandle(runner shim.ExecTwo, config *drivers.TaskConfig) (*Handle, time.Time) {
@@ -60,10 +66,19 @@ func RecreateHandle(runner shim.ExecTwo, config *drivers.TaskConfig, started tim
 	}
 }
 
-func (h *Handle) Stats() resources.Utilization {
+func (h *Handle) Stats() *resources.Utilization {
+	const cacheTTL = 10 * time.Second
+
 	h.lock.RLock()
 	defer h.lock.RUnlock()
-	return h.runner.Stats()
+
+	elapsed := time.Since(h.stats.timestamp)
+	if h.stats.utilization == nil || elapsed > cacheTTL {
+		h.stats.utilization = h.runner.Stats()
+		h.stats.timestamp = time.Now()
+	}
+
+	return h.stats.utilization
 }
 
 func (h *Handle) IsRunning() bool {
