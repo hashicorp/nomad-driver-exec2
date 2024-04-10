@@ -54,13 +54,12 @@ func NewHandle(runner shim.ExecTwo, config *drivers.TaskConfig) (*Handle, time.T
 }
 
 func RecreateHandle(runner shim.ExecTwo, config *drivers.TaskConfig, started time.Time) *Handle {
-	clock := libtime.SystemClock()
 	return &Handle{
 		pid:     runner.PID(),
 		runner:  runner,
 		config:  config,
 		state:   drivers.TaskStateUnknown,
-		clock:   clock,
+		clock:   libtime.SystemClock(),
 		started: started,
 		result:  nil,
 	}

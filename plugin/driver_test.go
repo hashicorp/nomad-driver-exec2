@@ -304,24 +304,21 @@ func TestFunctional_cases(t *testing.T) {
 			user:           "nomad-80000",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 1},
-			stderrRe:       regexp.MustCompile(`failed to exec command "/usr/bin/env": permission denied`),
+			exp:            &drivers.ExitResult{ExitCode: 2},
 		},
 		{
 			name:           "run 'env' as nobody without default paths",
 			user:           "nobody",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 1},
-			stderrRe:       regexp.MustCompile(`failed to exec command "/usr/bin/env": permission denied`),
+			exp:            &drivers.ExitResult{ExitCode: 2},
 		},
 		{
 			name:           "run 'env' as root without default paths",
 			user:           "root",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 1},
-			stderrRe:       regexp.MustCompile(`failed to exec command "/usr/bin/env": permission denied`),
+			exp:            &drivers.ExitResult{ExitCode: 2},
 		},
 		// write to task directory
 		{

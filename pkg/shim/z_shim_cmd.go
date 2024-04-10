@@ -4,12 +4,16 @@
 package shim
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"time"
+	"os/signal"
+	"path/filepath"
+	"strconv"
 
+	"github.com/hashicorp/nomad-driver-exec2/pkg/util"
 	"github.com/hashicorp/nomad/helper/subproc"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -17,44 +21,68 @@ const (
 	// for invoking the exec2 driver sandbox shim.
 	SubCommand = "exec2-shim"
 
-	// deadline is the total amount of time we allow this process to be alive;
-	// in this case we just invoke landlock and then exec into another
-	// process
-	deadline = 1 * time.Second
+	// ExitWrongArgs indicates the shim has terminated early due to recieving
+	// the wrong expected arguments. We use a special return code here since logs
+	// will not have been configured yet.
+	ExitWrongArgs = 40
+
+	// ExitBadLogging indicates the shim has terminated early due to being unable
+	// to open stdout or stderr output files (fifos).
+	ExitBadLogging = 41
 )
 
 // init is the entrypoint for the 'nomad e2e-shim' invocation of nomad
 //
 // The argument format is as follows,
 //
-// 1. nomad            <- the executable name
-// 2. exec2-shim       <- this subcommand
-// 3. true/false       <- include default unveil paths
-// 4. [mode:path, ...] <- list of additional unveil paths
-// 5. --               <- sentinel between following commands
+// 0. nomad            <- the executable name
+// 1. exec2-shim       <- this subcommand
+// 2. true/false       <- include default unveil paths
+// 3. <stdout path>    <- path to named pipe for standard output
+// 4. <stderr path>    <- path to named pipe for standard error
+// 5. [mode:path, ...] <- list of additional unveil paths
+// 6. --               <- sentinel between following commands
 func init() {
 	subproc.Do(SubCommand, func() int {
-		ctx, cancel := subproc.Context(deadline)
-		defer cancel()
-
-		// ensure we die in a timely manner
-		subproc.SetExpiration(ctx)
+		// we need to ignore the stop signal (which is sent to the entire
+		// process group) so that we stay alive and can capture the exit code
+		// of the child task process
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs)
+		go func() {
+			<-sigs // do nothing; say alive
+		}()
 
 		if n := len(os.Args); n <= 4 {
 			subproc.Print("failed to invoke e2e-shim with sufficient args: %d", n)
-			return subproc.ExitFailure
+			return ExitWrongArgs
 		}
 
 		// get the unveil paths and the rest of the command(s) to run
 		// from our command arguments
-		args := os.Args[3:] // chop off 'nomad exec2-shim <defaults>'
+		args := os.Args[5:] // chop off 'nomad exec2-shim <defaults>'
 		defaults := os.Args[2] == "true"
+		outPipePath := os.Args[3]
+		errPipePath := os.Args[4]
 		paths, commands := split(args)
+		paths = append(paths, "w:"+outPipePath)
+		paths = append(paths, "w:"+errPipePath)
+
+		stdout, stderr, err := util.OpenPipes(outPipePath, errPipePath)
+		if err != nil {
+			subproc.Print("failed to open output pipes: %v", err)
+			return ExitBadLogging
+		}
+
+		// give ourselves a way to write to the stderr pipe for printing fatal errors
+		debug := func(format string, args ...any) {
+			_, _ = io.WriteString(stderr, fmt.Sprintf(format, args...))
+		}
 
 		// use landlock to isolate this process and child processes to the
 		// set of given filepaths
 		if err := lockdown(defaults, paths); err != nil {
-			subproc.Print("failed to issue lockdown: %v", err)
+			debug("unable to lockdown: %v", err)
 			return subproc.ExitFailure
 		}
 
@@ -62,22 +90,29 @@ func init() {
 		// the first argument to the execve(2) call that follows
 		cmdpath, err := exec.LookPath(commands[0])
 		if err != nil {
-			subproc.Print("failed to locate command %q: %v", commands[0], err)
+			debug("failed to locate command %q: %v", commands[0], err)
 			return subproc.ExitNotRunnable
 		}
 
-		// invoke the following commands (nsenter, unshare, the task ...)
+		// invoke the task command with its args
 		// the environment has already been set for us by the exec2 driver
-		//
-		// this should never return because this process becomes the
-		// invoked command (it is not a child)
-		err = unix.Exec(cmdpath, commands, os.Environ())
-		if err != nil {
-			subproc.Print("failed to exec command %q: %v", cmdpath, err)
-			return subproc.ExitFailure
+		cmd := exec.Command(cmdpath, commands[1:]...)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+
+		var code = 0
+		if err = cmd.Run(); err != nil {
+			ee := err.(*exec.ExitError)
+			code = ee.ProcessState.ExitCode()
 		}
 
-		// should not be possible
-		panic("bug: return from exec without error")
+		_ = stdout.Close()
+		_ = stderr.Close()
+
+		// retrieve the exit status of the task process and write it to a
+		// known location in case the plugin driver needs to read it back
+		destination := filepath.Join(os.Getenv("NOMAD_TASK_DIR"), ".exit_status.txt")
+		_ = os.WriteFile(destination, []byte(strconv.Itoa(code)), 0o644)
+		return code
 	})
 }

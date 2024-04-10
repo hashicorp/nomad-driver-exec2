@@ -7,9 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -26,7 +26,6 @@ import (
 	"github.com/hashicorp/nomad/plugins/drivers/utils"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
-	"golang.org/x/sys/unix"
 	"oss.indeed.com/go/libtime"
 )
 
@@ -172,6 +171,15 @@ func failure(state drivers.HealthState, desc string) *drivers.Fingerprint {
 	}
 }
 
+func (p *Plugin) pipePaths(stdout, stderr string, env map[string]string) (string, string) {
+	mountsTaskDir := env["NOMAD_ALLOC_DIR"]
+	outFilename := filepath.Base(stdout)
+	errFilename := filepath.Base(stderr)
+	outPath := filepath.Join(mountsTaskDir, "logs", outFilename)
+	errPath := filepath.Join(mountsTaskDir, "logs", errFilename)
+	return outPath, errPath
+}
+
 // StartTask will setup the environment for and then launch the actual unix
 // process of the task. This information will be encoded into, stored as, and
 // returned as a task handle.
@@ -192,13 +200,6 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	handle := drivers.NewTaskHandle(handleVersion)
 	handle.Config = config
 
-	// open descriptors for the task's stdout and stderr
-	stdout, stderr, err := open(config.StdoutPath, config.StderrPath)
-	if err != nil {
-		p.logger.Error("failed to open log files", "error", err)
-		return nil, nil, fmt.Errorf("failed to open log file(s): %w", err)
-	}
-
 	// compute memory and memory_max values
 	memory := uint64(config.Resources.NomadResources.Memory.MemoryMB) * 1024 * 1024
 	memoryMax := uint64(config.Resources.NomadResources.Memory.MemoryMaxMB) * 1024 * 1024
@@ -217,10 +218,18 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	// with cgroups v2 this is just the task cgroup
 	cgroup := config.Resources.LinuxResources.CpusetCgroupPath
 
+	// locate the stdout/stderr fifo paths relative to the mounts task directory
+	outPipe, errPipe := p.pipePaths(
+		handle.Config.StdoutPath,
+		handle.Config.StderrPath,
+		config.Env,
+	)
+
 	// set the task execution environment
+	// no task logging yet; that is setup in the shim
 	env := &shim.Environment{
-		Out:          stdout,
-		Err:          stderr,
+		OutPipe:      outPipe,
+		ErrPipe:      errPipe,
 		Env:          config.Env,
 		TaskDir:      config.TaskDir().Dir,
 		User:         config.User,
@@ -293,8 +302,8 @@ func (p *Plugin) RecoverTask(handle *drivers.TaskHandle) error {
 
 	// re-create the environment for re-attachment
 	env := &shim.Environment{
-		Out:     util.NullCloser(io.Discard),
-		Err:     util.NullCloser(io.Discard),
+		OutPipe: handle.Config.StdoutPath,
+		ErrPipe: handle.Config.StderrPath,
 		Env:     handle.Config.Env,
 		TaskDir: handle.Config.TaskDir().Dir,
 		User:    handle.Config.User,
@@ -427,18 +436,6 @@ func (*Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions
 	return nil, errors.New("ExecTaskStreaming is not yet implemented")
 }
 
-func open(stdout, stderr string) (io.WriteCloser, io.WriteCloser, error) {
-	a, err := os.OpenFile(stdout, unix.O_WRONLY, os.ModeNamedPipe)
-	if err != nil {
-		return nil, nil, err
-	}
-	b, err := os.OpenFile(stderr, unix.O_WRONLY, os.ModeNamedPipe)
-	if err != nil {
-		return nil, nil, err
-	}
-	return a, b, nil
-}
-
 // netns returns the filepath to the network namespace if the network
 // isolation mode is set to bridge
 func netns(c *drivers.TaskConfig) string {
@@ -521,6 +518,7 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 			// if task.config.unveil is set, the plugin config must allow it
 			return nil, fmt.Errorf("task set unveil paths but driver config does not allow this")
 		}
+
 		// use the user specified unveil paths from task.config.unveil
 		unveil = append(unveil, taskConfig.Unveil...)
 	}

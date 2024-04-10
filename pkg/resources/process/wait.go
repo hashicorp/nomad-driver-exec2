@@ -6,9 +6,12 @@ package process
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/hashicorp/nomad/plugins/drivers"
+	"golang.org/x/sys/unix"
 )
 
 type WaitCh chan *drivers.ExitResult
@@ -69,19 +72,28 @@ func (w *procWaiter) wait(ch chan<- *drivers.ExitResult) {
 	}
 }
 
+const (
+	// exitStatusFile is written into the task directory upon the exit of the
+	// parent task process. It contains the exit status in case the value needs
+	// to be retrieved by the plugin (i.e. if the task process was orphaned).
+	exitStatusFile = ".exit_status.txt"
+)
+
 // WaitPID is able to wait on a given specific PID. We must lookup the
 // process and also send a signal(0) to make sure it is actually still alive
 // before waiting on it.
-func WaitPID(pid int) Waiter {
+func WaitPID(pid int, taskdir string) Waiter {
 	return &pidWaiter{
-		pid: pid,
-		ch:  make(chan *drivers.ExitResult),
+		pid:     pid,
+		taskdir: taskdir,
+		ch:      make(chan *drivers.ExitResult),
 	}
 }
 
 type pidWaiter struct {
-	pid int
-	ch  chan *drivers.ExitResult
+	pid     int
+	taskdir string
+	ch      chan *drivers.ExitResult
 }
 
 func (w *pidWaiter) Wait() WaitCh {
@@ -89,27 +101,72 @@ func (w *pidWaiter) Wait() WaitCh {
 	return w.ch
 }
 
-func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
-	proc, _ := os.FindProcess(w.pid) // never errors on unix
+func unrecoverable(msg string, err error) *drivers.ExitResult {
+	return &drivers.ExitResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("%s: %w", msg, err),
+	}
+}
 
+func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
 	// send a 0 signal to detect if the process is still alive
+	proc, _ := os.FindProcess(w.pid) // never errors on unix
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		// TODO(shoenig): there is still a way to get the exit code and signal
-		// of a recently deceased process by reading /proc; we should look into
-		// that after Nomad 1.8 Beta since Client restarts are a thing that we
-		// support.
-		//
-		// See what the pledge driver is doing for inspiration in
-		// https://github.com/shoenig/nomad-pledge-driver/blob/v0.3.0/pkg/resources/process/wait.go#L82-L105
-		// and make sure it works correctly.
-		ch <- &drivers.ExitResult{
-			ExitCode: -1,
-			Err:      fmt.Errorf("task is gone: %w", err),
-		}
+		ch <- unrecoverable("task process handle is gone", err)
 		return
 	}
 
-	// from here we can just use the logic for waiting on an os.Process
-	waiter := &procWaiter{p: proc}
-	waiter.wait(ch)
+	pidfd, err := openProcessFD(w.pid)
+	if err != nil {
+		ch <- unrecoverable("task process file descriptor cannot be opened", err)
+		return
+	}
+
+	pollFD := []unix.PollFd{{
+		Fd:     pidfd,
+		Events: unix.POLLIN,
+	}}
+	const timeout = -1 // infinite
+
+	// no need to check for an error
+	_, _ = unix.Poll(pollFD, timeout)
+
+	// retrieve code from file
+	source := filepath.Join(w.taskdir, "local", exitStatusFile)
+	code, err := getExitStatus(source)
+	if err != nil {
+		ch <- unrecoverable("task process exit status is missing", err)
+		return
+	}
+
+	// finally send back the retreived exit status
+	ch <- &drivers.ExitResult{
+		ExitCode: code,
+	}
+}
+
+func getExitStatus(path string) (int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return -1, err
+	}
+	code, err := strconv.Atoi(string(b))
+	if err != nil {
+		return -1, err
+	}
+	return code, nil
+}
+
+// openProcessFD returns a file descriptor for the process of the given PID. This FD
+// can then later be used for other syscalls as a reference to the process.
+//
+// Good discussion about better native support in Go for this in
+// https://github.com/golang/go/issues/62654
+func openProcessFD(pid int) (int32, error) {
+	const syscallNumber = 434 // sys_pidfd_open
+	fd, _, err := syscall.Syscall(syscallNumber, uintptr(pid), uintptr(0), 0)
+	if err != 0 {
+		return 0, err
+	}
+	return int32(fd), nil
 }

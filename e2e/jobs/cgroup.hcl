@@ -26,7 +26,7 @@ job "cgroup" {
       config {
         command = "/usr/bin/cat"
         args    = ["/proc/self/cgroup"]
-        unveil  = ["r:/proc/self/cgroup"]
+        unveil  = ["r:/proc"]
       }
 
       resources {
