@@ -38,3 +38,21 @@ hack: compile
 hack:
 	@echo "==> Run dev Nomad with exec2 plugin"
 	sudo nomad agent -dev -plugin-dir=$(NOMAD_PLUGIN_DIR) -config=e2e/agent.hcl
+
+# CRT release compilation
+dist/%/nomad-driver-exec2: GO_OUT ?= $@
+dist/%/nomad-driver-exec2:
+	@echo "==> RELEASE BUILD of $@ ..."
+	GOOS=linux GOARCH=$(lastword $(subst _, ,$*)) \
+	go build -trimpath -o $(GO_OUT)
+
+# CRT release packaging (zip only)
+.PRECIOUS: dist/%/nomad-driver-exec2
+dist/%.zip: dist/%/nomad-driver-exec2
+	@echo "==> RELEASE PACKAGING of $@ ..."
+	zip -j $@ $(dir $<)*
+
+# CRT version generation
+.PHONY: version
+version:
+	@$(CURDIR)/version/generate.sh version/version.go version/version.go
