@@ -4,7 +4,7 @@
 package process
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -101,48 +101,58 @@ func (w *pidWaiter) Wait() WaitCh {
 	return w.ch
 }
 
-func unrecoverable(msg string, err error) *drivers.ExitResult {
+// finished will either succesfully read the exit code from the given source
+// file, or will return a -1 exit status with an error message if the file
+// cannot be read for any reason.
+func finished(source string, msg string) *drivers.ExitResult {
+	code, err := getExitStatus(source)
+	if err == nil {
+		return &drivers.ExitResult{
+			ExitCode: code,
+		}
+	}
 	return &drivers.ExitResult{
 		ExitCode: -1,
-		Err:      fmt.Errorf("%s: %w", msg, err),
+		Err:      errors.New(msg),
 	}
 }
 
 func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
-	// send a 0 signal to detect if the process is still alive
-	proc, _ := os.FindProcess(w.pid) // never errors on unix
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		ch <- unrecoverable("task process handle is gone", err)
-		return
-	}
+	// full path to the .exit_status.txt file
+	source := filepath.Join(w.taskdir, "local", exitStatusFile)
 
-	pidfd, err := openProcessFD(w.pid)
-	if err != nil {
-		ch <- unrecoverable("task process file descriptor cannot be opened", err)
+	// attempt to acquire a pidFD on the PID of what may or may not still be
+	// our task process
+	pidFD, pidErr := openProcessFD(w.pid)
+	if pidErr != nil {
+		ch <- finished(source, "task process file descriptor cannot be opened")
 		return
 	}
+	defer func() { _ = unix.Close(int(pidFD)) }()
 
 	pollFD := []unix.PollFd{{
-		Fd:     pidfd,
+		Fd:     pidFD,
 		Events: unix.POLLIN,
 	}}
 	const timeout = -1 // infinite
 
+	// while we are holding the pidfd to *a* process of the same PID as the
+	// process we launched before client restart, check again if the
+	// .exit_status.txt file exists - which would indicate we're holding onto
+	// the pidfd of a process we do not know or care about
+	code, codeErr := getExitStatus(source)
+	if codeErr == nil && code >= 0 {
+		ch <- &drivers.ExitResult{
+			ExitCode: code,
+		}
+	}
+
 	// no need to check for an error
 	_, _ = unix.Poll(pollFD, timeout)
 
-	// retrieve code from file
-	source := filepath.Join(w.taskdir, "local", exitStatusFile)
-	code, err := getExitStatus(source)
-	if err != nil {
-		ch <- unrecoverable("task process exit status is missing", err)
-		return
-	}
-
-	// finally send back the retreived exit status
-	ch <- &drivers.ExitResult{
-		ExitCode: code,
-	}
+	// the process has terminated; we should be able to read the
+	// .exit_status.txt file the shim will have left behind for us
+	ch <- finished(source, "task process complete but status is missing")
 }
 
 func getExitStatus(path string) (int, error) {
