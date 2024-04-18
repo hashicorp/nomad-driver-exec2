@@ -60,6 +60,23 @@ func run(t *testing.T, ctx context.Context, command string, args ...string) stri
 	return output
 }
 
+var (
+	jobStatusRe = regexp.MustCompile(`Status\s+=\s+dead`)
+)
+
+func wait(t *testing.T, ctx context.Context, job string) {
+	const retries = 60
+	for i := range retries {
+		output := run(t, ctx, "nomad", "job", "status", job)
+		if jobStatusRe.MatchString(output) {
+			return
+		}
+		t.Logf("did not get dead job status on attempt %d/%d", i, retries)
+		time.Sleep(1 * time.Second)
+	}
+	t.FailNow()
+}
+
 func logs(t *testing.T, ctx context.Context, alloc string) string {
 	const retries = 30
 	for i := range retries {
@@ -160,6 +177,21 @@ func TestBasic_Sleep(t *testing.T) {
 	stopStatus := run(t, ctx, "nomad", "job", "status", "sleep")
 	deadRe := regexp.MustCompile(`Status\s+=\s+dead\s+\(stopped\)`)
 	must.RegexMatch(t, deadRe, stopStatus)
+}
+
+func TestBasic_Java(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "java")()
+
+	_ = run(t, ctx, "nomad", "job", "run",
+		"-var=javabin=/usr/lib/jvm/temurin-21-jdk-amd64/bin",
+		"-var=etcjava=/etc/alternatives",
+		"./jobs/java.hcl",
+	)
+	wait(t, ctx, "java")
+
+	logs := logs2(t, ctx, "java", "main")
+	must.StrContains(t, logs, "hello, java!")
 }
 
 func TestBasic_HTTP(t *testing.T) {
