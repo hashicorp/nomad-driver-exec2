@@ -194,7 +194,7 @@ func TestBasic_Passwd(t *testing.T) {
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/passwd.hcl")
 
 	// make sure job is failing (cannot read /etc/passwd)
-	time.Sleep(5 * time.Second)
+	time.Sleep(20 * time.Second)
 	jobStatus := run(t, ctx, "nomad", "job", "status", "passwd")
 	must.RegexMatch(t, deadRe, jobStatus)
 
@@ -243,8 +243,8 @@ func TestBasic_ProcessNamespace(t *testing.T) {
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/ps.hcl")
 
 	logs := logs2(t, ctx, "ps", "ps")
-	lines := strings.Split(logs, "\n") // header and ps
-	must.SliceLen(t, 2, lines, must.Sprintf("expected 2 lines, got %q", logs))
+	lines := strings.Split(logs, "\n") // header + shim + ps
+	must.SliceLen(t, 3, lines, must.Sprintf("expected 3 lines, got %q", logs))
 }
 
 func TestBasic_Exit7(t *testing.T) {
@@ -254,7 +254,7 @@ func TestBasic_Exit7(t *testing.T) {
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/exit7.hcl")
 
 	// make sure job is failing (script returns exit code 7)
-	time.Sleep(5 * time.Second)
+	time.Sleep(15 * time.Second)
 	jobStatus := run(t, ctx, "nomad", "job", "status", "exit7")
 	must.RegexMatch(t, deadRe, jobStatus)
 

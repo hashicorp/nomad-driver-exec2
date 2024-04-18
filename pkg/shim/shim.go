@@ -35,8 +35,8 @@ type Options struct {
 // Environment represents runtime configuration.
 type Environment struct {
 	User         string            // user the command will run as (may be empty / synthetic)
-	Out          io.WriteCloser    // stdout handle
-	Err          io.WriteCloser    // stderr handle
+	OutPipe      string            // io pipe path for stdout
+	ErrPipe      string            // io pipe path for stderr
 	Env          map[string]string // environment variables
 	TaskDir      string            // task directory
 	Cgroup       string            // task cgroup path
@@ -90,8 +90,8 @@ func Recover(pid int, env *Environment) ExecTwo {
 	return &exe{
 		pid:     pid,
 		env:     env,
-		opts:    nil, // already started, no use
-		waiter:  process.WaitPID(pid).Wait(),
+		opts:    nil, // already started, not used now
+		waiter:  process.WaitPID(pid, env.TaskDir).Wait(),
 		signals: process.Signals(pid),
 		cpu:     new(resources.TrackCPU),
 	}
@@ -129,6 +129,11 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to write cgroup constraints: %w", err)
 	}
 
+	// set permissions on fifos for logging output
+	if err = e.fixPipes(uid, gid); err != nil {
+		return fmt.Errorf("failed to set logging pipe ownership: %w", err)
+	}
+
 	// create sandbox using nsenter, unshare, and our cgroup
 	cmd := e.prepare(ctx, home, fd, uid, gid)
 	if err = cmd.Start(); err != nil {
@@ -140,6 +145,16 @@ func (e *exe) Start(ctx context.Context) error {
 	e.signals = process.Signals(cmd.Process.Pid)
 	e.waiter = process.WaitProc(cmd.Process).Wait()
 
+	return nil
+}
+
+func (e *exe) fixPipes(uid, gid int) error {
+	if err := os.Chown(e.env.OutPipe, uid, gid); err != nil {
+		return err
+	}
+	if err := os.Chown(e.env.ErrPipe, uid, gid); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,8 +176,6 @@ func (e *exe) Stop(signal string, timeout time.Duration) error {
 	if e.blockPIDs(timeout) {
 		// no more mr. nice guy, kill the whole cgroup
 		_ = e.writeCG("cgroup.kill", "1")
-		_ = e.env.Out.Close()
-		_ = e.env.Err.Close()
 	}
 	return err
 }
@@ -302,6 +315,8 @@ func (e *exe) parameters(uid, gid int) []string {
 	// setup ourself '$0 exec2-shim' for unveil
 	result = append(result, self(), SubCommand)
 	result = append(result, strconv.FormatBool(e.opts.UnveilDefaults))
+	result = append(result, e.env.OutPipe)
+	result = append(result, e.env.ErrPipe)
 	result = append(result, e.opts.UnveilPaths...)
 	result = append(result, "--")
 
@@ -315,12 +330,12 @@ func (e *exe) parameters(uid, gid int) []string {
 	return result
 }
 
-// create an exec.Cmd to run our process
+// create an exec.Cmd to run our process tree
 func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.Cmd {
 	params := e.parameters(uid, gid)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
-	cmd.Stdout = e.env.Out
-	cmd.Stderr = e.env.Err
+	cmd.Stdout = nil // nsenter and unshare do not log
+	cmd.Stderr = nil // nsenter and unshare do not log
 	cmd.Env = flatten(e.env.User, home, e.env.Env)
 	cmd.Dir = e.env.TaskDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
