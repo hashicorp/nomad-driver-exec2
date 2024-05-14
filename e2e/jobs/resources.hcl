@@ -21,6 +21,7 @@ job "resources" {
     }
 
     task "memory.max" {
+      user   = "nobody"
       driver = "exec2"
 
       config {
@@ -35,6 +36,7 @@ job "resources" {
     }
 
     task "memory.max.oversub" {
+      user   = "nobody"
       driver = "exec2"
       config {
         command = "cat"
@@ -49,6 +51,7 @@ job "resources" {
     }
 
     task "memory.low.oversub" {
+      user   = "nobody"
       driver = "exec2"
       config {
         command = "cat"
@@ -63,6 +66,7 @@ job "resources" {
     }
 
     task "cpu.max" {
+      user   = "nobody"
       driver = "exec2"
       config {
         command = "cat"
@@ -75,6 +79,7 @@ job "resources" {
     }
 
     task "cpu.max.cores" {
+      user   = "nobody"
       driver = "exec2"
       config {
         command = "cat"
