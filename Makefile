@@ -50,6 +50,7 @@ dist/%/nomad-driver-exec2:
 .PRECIOUS: dist/%/nomad-driver-exec2
 dist/%.zip: dist/%/nomad-driver-exec2
 	@echo "==> RELEASE PACKAGING of $@ ..."
+	@cp LICENSE $(dir $<)LICENSE.txt
 	zip -j $@ $(dir $<)*
 
 # CRT version generation
