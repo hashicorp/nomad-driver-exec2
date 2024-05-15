@@ -8,7 +8,7 @@ replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-202305
 require (
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-set/v2 v2.1.0
-	github.com/hashicorp/nomad v1.7.0-beta.2.0.20240426122952-5f64e42d73a6 // TODO(shoenig) use v1.8
+	github.com/hashicorp/nomad v1.8.0-beta.1.0.20240515141318-2533cc306fd6 // TODO(shoenig) use v1.8
 	github.com/shoenig/go-landlock v1.2.0
 	github.com/shoenig/test v1.7.1
 	golang.org/x/sys v0.19.0
@@ -128,7 +128,7 @@ require (
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/vmihailenco/msgpack/v4 v4.3.12 // indirect
