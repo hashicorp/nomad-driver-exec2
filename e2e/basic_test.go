@@ -367,3 +367,17 @@ func TestBasic_Envoy(t *testing.T) {
 	envoyService := run(t, ctx, "nomad", "service", "info", "envoy")
 	must.StrContains(t, envoyService, "envoy-test")
 }
+
+func TestBasic_Secret(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "secret")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/secret.hcl")
+
+	statusOutput := run(t, ctx, "nomad", "job", "status", "secret")
+	alloc := allocFromJobStatus(t, statusOutput)
+
+	output := logs(t, ctx, alloc)
+	tokenRe := regexp.MustCompile(`[\w-]+`)
+	must.RegexMatch(t, tokenRe, output)
+}
