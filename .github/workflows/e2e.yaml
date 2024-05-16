@@ -31,6 +31,11 @@ jobs:
           mkdir -p /opt/cni/bin
           curl -s -S -L -o cni.tgz "https://github.com/containernetworking/plugins/releases/download/v1.3.0/cni-plugins-linux-amd64-v1.3.0.tgz"
           tar -C /opt/cni/bin -xf cni.tgz
+      - name: Install Envoy
+        run: |
+          mkdir -p /opt/bin
+          curl -s -S -L -o /opt/bin/envoy https://github.com/envoyproxy/envoy/releases/download/v1.30.1/envoy-1.30.1-linux-x86_64
+          chmod +x /opt/bin/envoy
       - name: Install Plugin
         run: |
           make compile

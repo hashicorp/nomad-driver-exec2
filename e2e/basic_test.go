@@ -119,6 +119,11 @@ func purge(t *testing.T, ctx context.Context, job string) func() {
 	}
 }
 
+var (
+	// runningRe is a regex for checking the "running" status of a job.
+	runningRe = regexp.MustCompile(`Status\s+=\s+running`)
+)
+
 func allocFromJobStatus(t *testing.T, s string) string {
 	re := regexp.MustCompile(`([[:xdigit:]]+)\s+([[:xdigit:]]+)\s+group`)
 	matches := re.FindStringSubmatch(s)
@@ -164,9 +169,8 @@ func TestBasic_Sleep(t *testing.T) {
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/sleep.hcl")
 
-	// no log output, make sure jbo is running
+	// no log output, make sure job is running
 	jobStatus := run(t, ctx, "nomad", "job", "status", "sleep")
-	runningRe := regexp.MustCompile(`Status\s+=\s+running`)
 	must.RegexMatch(t, runningRe, jobStatus)
 
 	// stop the job
@@ -202,7 +206,6 @@ func TestBasic_HTTP(t *testing.T) {
 
 	// make sure job is running
 	jobStatus := run(t, ctx, "nomad", "job", "status", "http")
-	runningRe := regexp.MustCompile(`Status\s+=\s+running`)
 	must.RegexMatch(t, runningRe, jobStatus)
 
 	// curl localhost:8181
@@ -348,4 +351,19 @@ func TestBasic_Resources(t *testing.T) {
 		must.NoError(t, err)
 		must.Positive(t, v)
 	})
+}
+
+func TestBasic_Envoy(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "envoy")
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/envoy.hcl")
+
+	// make sure job is running
+	jobStatus := run(t, ctx, "nomad", "job", "status", "envoy")
+	must.RegexMatch(t, runningRe, jobStatus)
+
+	// make sure the service is registered
+	envoyService := run(t, ctx, "nomad", "service", "info", "envoy")
+	must.StrContains(t, envoyService, "envoy-test")
 }
