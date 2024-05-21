@@ -51,7 +51,7 @@ var driverConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		hclspec.NewAttr("unveil_by_task", "bool", false),
 		hclspec.NewLiteral("false"),
 	),
-	"unveil_paths": hclspec.NewAttr("unveil_paths", "list(string)", true),
+	"unveil_paths": hclspec.NewAttr("unveil_paths", "list(string)", false),
 })
 
 // taskConfigSpec is the HCL configuration set for the task on the jobspec
