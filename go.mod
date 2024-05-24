@@ -8,7 +8,7 @@ replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-202305
 require (
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-set/v2 v2.1.0
-	github.com/hashicorp/nomad v1.8.0-beta.1.0.20240515141318-2533cc306fd6 // TODO(shoenig) use v1.8
+	github.com/hashicorp/nomad v1.8.0-rc.1
 	github.com/shoenig/go-landlock v1.2.0
 	github.com/shoenig/test v1.7.1
 	golang.org/x/sys v0.19.0
