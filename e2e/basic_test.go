@@ -184,8 +184,6 @@ func TestBasic_Sleep(t *testing.T) {
 }
 
 func TestBasic_Java(t *testing.T) {
-	t.Skip("needs fix for #29")
-
 	ctx := setup(t)
 	defer purge(t, ctx, "java")()
 
@@ -356,8 +354,6 @@ func TestBasic_Resources(t *testing.T) {
 }
 
 func TestBasic_Envoy(t *testing.T) {
-	t.Skip("needs fix for #29")
-
 	ctx := setup(t)
 	defer purge(t, ctx, "envoy")
 
@@ -373,8 +369,6 @@ func TestBasic_Envoy(t *testing.T) {
 }
 
 func TestBasic_Secret(t *testing.T) {
-	t.Skip("needs fix for #29")
-
 	ctx := setup(t)
 	defer purge(t, ctx, "secret")()
 
