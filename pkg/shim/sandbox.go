@@ -45,7 +45,6 @@ func lockdown(defaults bool, elements []string) error {
 	if defaults {
 		paths = append(paths, landlock.Shared())
 		paths = append(paths, landlock.Stdio())
-		paths = append(paths, landlock.Tmp())
 		paths = append(paths, landlock.DNS())
 		paths = append(paths, landlock.Certs())
 		paths = append(paths,
