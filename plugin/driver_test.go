@@ -348,6 +348,35 @@ func TestFunctional_cases(t *testing.T) {
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_SECRETS_DIR}"},
 			exp:            &drivers.ExitResult{ExitCode: 0},
 		},
+		// fail to write to task directory with no defaults
+		{
+			name:           "write to task directory no defaults",
+			user:           "nomad-81000",
+			command:        "sh",
+			unveilDefaults: false,
+			unveilPaths:    []string{"r:/etc/hosts"},
+			args:           []string{"-c", "cp /etc/hosts ${NOMAD_TASK_DIR}"},
+			exp:            &drivers.ExitResult{ExitCode: 2},
+		},
+		{
+			name:           "write to alloc directory no defaults",
+			user:           "nomad-81000",
+			command:        "sh",
+			unveilDefaults: false,
+			unveilPaths:    []string{"r:/etc/hosts"},
+			args:           []string{"-c", "cp /etc/hosts ${NOMAD_ALLOC_DIR}"},
+			exp:            &drivers.ExitResult{ExitCode: 2},
+		},
+		{
+			name:           "write to secrets directory no defaults",
+			user:           "nomad-80000",
+			command:        "sh",
+			unveilDefaults: false,
+			unveilPaths:    []string{"r:/etc/hosts"},
+			args:           []string{"-c", "cp /etc/hosts ${NOMAD_SECRETS_DIR}"},
+			exp:            &drivers.ExitResult{ExitCode: 2},
+		},
+		// dyanmic id
 		{
 			name:           "id dynamic",
 			user:           "nomad-89000",
