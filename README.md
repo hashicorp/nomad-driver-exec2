@@ -95,6 +95,12 @@ dependent, and can be disabled or customized in plugin config.
 The default set of default paths are listed below. These paths are enabled only
 if they are found to exist at the time of the task launching.
 
+##### bin files
+
+- `/bin` (read, execute)
+- `/usr/bin` (read, execute)
+- `/usr/local/bin` (read, execute)
+
 ##### shared objects
 
 - `/dev/null` (read, write)
@@ -188,12 +194,15 @@ config {
 }
 ```
 
-  - `command` - (required) - command to run
+  - `command` - (required) - The command to run. Note that this filepath is
+  not automatically made accessible to the task. For example, an executable
+  under `/opt/bin` would not be accessible unless granted access through `unveil`
+  in task config or `unveil_paths` in plugin config.
 
-  - `args` - (optional) - list of arguments to provide to `command`
+  - `args` - (optional) - A list of arguments to provide to `command`.
 
-  - `unveil` - (optional) - list of additional filesystem paths to provide
-  access to the task (requires `unveil_by_task` in plugin config)
+  - `unveil` - (optional) - A list of additional filesystem paths to provide
+  access to the task (requires `unveil_by_task` in plugin config).
 
 ##### cpu
 
