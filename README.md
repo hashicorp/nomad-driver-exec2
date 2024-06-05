@@ -18,10 +18,11 @@ ordinary file system permissions.
 Recent mainstream Linux distributions such as Ubuntu 22.04 and RHEL 9 meet the
 requirements and are well supported.
 
-### Example Jobs
+### Simple Example
 
 Here is a simple example running `env`. It makes use of a dynamic workload
-user and does not require any extra filepaths to `unveil`.
+user and does not require any extra filepaths to `unveil`. There are more
+complex examples at the bottom of the README.
 
 ```hcl
 job "env" {
@@ -247,4 +248,82 @@ must already be running.
 
 ```shell-session
 make hack
+```
+
+### Common Examples
+
+#### python http
+
+This example demonstrates using Python's built-in HTTP server to serve the contents
+of the task's own task directory. Notice the use of `unveil` to give the task access
+to `/etc/mime.types` with read-only permissions, which is required for Python's HTTP
+server to operator correctly.
+
+```hcl
+job "http" {
+  group "web" {
+    network {
+      mode = "host"
+      port "http" { static = 8181 }
+    }
+
+    task "python" {
+      driver = "exec2"
+
+      config {
+        command = "python3"
+        args    = ["-m", "http.server", "${NOMAD_PORT_http}", "--directory", "${NOMAD_TASK_DIR}"]
+        unveil  = ["r:/etc/mime.types"]
+      }
+
+      template {
+        destination = "local/index.html"
+        data        = <<EOH
+<!doctype html>
+<html>
+  <title>example</title>
+  <body><p>Hello, user!</p></body>
+</html>
+EOH
+      }
+    }
+  }
+}
+```
+
+#### java programs
+
+This example demonstrates the use of `java` to run a `Test.class` file 
+located in the task's allocation directory. The JVM requires certain files
+on the host to work properly; on this system the task must unveil the
+`/etc/java-17-openjdk` path. On GitHub CI runners this might be located
+under `/etc/alternatives`, for example, and the `javabin` variable would
+need to be `/usr/lib/jvm/temurin-21-jdk-amd64/bin`.
+
+```hcl
+variable "javabin" {
+  type    = string
+  default = "/usr/bin"
+}
+
+variable "etcjava" {
+  type    = string
+  default = "/etc/java-17-openjdk"
+}
+
+job "java" {
+  type = "batch"
+
+  group "group" {
+    task "main" {
+      driver = "exec2"
+
+      config {
+        command = "${var.javabin}/java"
+        args    = ["-cp", "${NOMAD_ALLOC_DIR}", "Test"]
+        unveil  = ["r:${var.etcjava}"]
+      }
+    }
+  }
+}
 ```
