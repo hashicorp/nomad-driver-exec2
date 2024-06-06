@@ -515,6 +515,8 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_ALLOC_DIR"])
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_SECRETS_DIR"])
+		parent := filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"])
+		unveil = append(unveil, "rwxc:"+filepath.Join(parent, "tmp"))
 	}
 
 	if len(taskConfig.Unveil) > 0 {

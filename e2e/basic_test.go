@@ -163,6 +163,20 @@ func TestBasic_Env(t *testing.T) {
 	must.RegexMatch(t, containsUserRe, output)
 }
 
+func TestBasic_Mktemp(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "mktemp")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/mktemp.hcl")
+	statusOutput := run(t, ctx, "nomad", "job", "status", "mktemp")
+	alloc := allocFromJobStatus(t, statusOutput)
+
+	// contains reasonable mktemp output
+	resultRe := regexp.MustCompile(`\w+-mktemp/tmp/tmp\.\w+`)
+	output := logs(t, ctx, alloc)
+	must.RegexMatch(t, resultRe, output)
+}
+
 func TestBasic_Sleep(t *testing.T) {
 	ctx := setup(t)
 	defer purge(t, ctx, "sleep")()
