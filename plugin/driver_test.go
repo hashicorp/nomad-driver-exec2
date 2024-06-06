@@ -411,6 +411,15 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`root\s+1.+ps aux`), // out ps is pid 1
 		},
+		// able to use TMPDIR
+		{
+			name:           "use TMPDIR",
+			user:           "nomad-82000",
+			command:        "mktemp",
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`\w+/tmp/tmp\.\w+`),
+		},
 	}
 
 	for _, tc := range cases {
