@@ -1,4 +1,7 @@
 #!/bin/sh
 
-mkdir -p /opt/nomad/plugins
-ln -s /usr/bin/nomad-driver-exec2 /opt/nomad/plugins/nomad-driver-exec2
+# Ensure <data_dir>/plugins exists.
+mkdir -p /opt/nomad/data/plugins
+
+# Symlink driver in the plugins directory.
+ln -s /usr/bin/nomad-driver-exec2 /opt/nomad/data/plugins/nomad-driver-exec2
