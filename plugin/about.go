@@ -87,7 +87,8 @@ type Config struct {
 // TaskConfig represents the exec2 driver task configuration that gets set in
 // a Nomad job file.
 type TaskConfig struct {
-	Command string   `codec:"command"`
-	Args    []string `codec:"args"`
-	Unveil  []string `codec:"unveil"`
+	Command     string   `codec:"command"`
+	Args        []string `codec:"args"`
+	Unveil      []string `codec:"unveil"`
+	OOMScoreAdj int      `codec:"oom_score_adj"`
 }

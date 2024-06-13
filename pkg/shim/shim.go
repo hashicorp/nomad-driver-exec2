@@ -30,6 +30,7 @@ type Options struct {
 	Arguments      []string
 	UnveilPaths    []string
 	UnveilDefaults bool
+	OOMScoreAdj    int
 }
 
 // Environment represents runtime configuration.
@@ -44,6 +45,7 @@ type Environment struct {
 	Memory       uint64            // memory in megabytes
 	MemoryMax    uint64            // memory_max in megabytes
 	CPUBandwidth uint64            // cpu / cores bandwidth
+	OOMScoreAdj  uint64            // oom_score_adj for the task
 }
 
 type ExecTwo interface {

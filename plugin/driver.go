@@ -533,5 +533,6 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		Arguments:      taskConfig.Args,
 		UnveilPaths:    unveil,
 		UnveilDefaults: p.config.UnveilDefaults,
+		OOMScoreAdj:    taskConfig.OOMScoreAdj,
 	}, nil
 }
