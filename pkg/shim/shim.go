@@ -131,6 +131,11 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to write cgroup constraints: %w", err)
 	}
 
+	// set oom_score_adj
+	if err = e.setOomScoreAdj(); err != nil {
+		return fmt.Errorf("failed to set oom score adj: %w", err)
+	}
+
 	// set permissions on fifos for logging output
 	if err = e.fixPipes(uid, gid); err != nil {
 		return fmt.Errorf("failed to set logging pipe ownership: %w", err)
@@ -370,6 +375,10 @@ func (e *exe) constrain() error {
 		}
 	}
 	return nil
+}
+
+func (e *exe) setOomScoreAdj() error {
+	return os.WriteFile("/proc/self/oom_score_adj", []byte(strconv.Itoa(int(e.env.OOMScoreAdj))), 0644)
 }
 
 var (
