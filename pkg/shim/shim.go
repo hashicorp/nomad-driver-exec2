@@ -131,11 +131,6 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to write cgroup constraints: %w", err)
 	}
 
-	// set oom_score_adj
-	if err = e.setOomScoreAdj(); err != nil {
-		return fmt.Errorf("failed to set oom score adj: %w", err)
-	}
-
 	// set permissions on fifos for logging output
 	if err = e.fixPipes(uid, gid); err != nil {
 		return fmt.Errorf("failed to set logging pipe ownership: %w", err)
@@ -145,6 +140,11 @@ func (e *exe) Start(ctx context.Context) error {
 	cmd := e.prepare(ctx, home, fd, uid, gid)
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start command: %w", err)
+	}
+
+	// set oom_score_adj
+	if err = e.setOomScoreAdj(cmd.Process.Pid); err != nil {
+		return fmt.Errorf("failed to set oom score adj: %w", err)
 	}
 
 	// attach to the underlying unix process
@@ -195,7 +195,7 @@ func (e *exe) Stats() *resources.Utilization {
 	swapCurrent, _ := strconv.Atoi(swapCurrentS)
 
 	memStatS, _ := e.readCG("memory.stat")
-	memCache := extractRe(memStatS, memCacheRe)
+	memCache := extractRe(memStatS)
 
 	cpuStatsS, _ := e.readCG("cpu.stat")
 	usr, system, total := extractCPU(cpuStatsS)
@@ -377,15 +377,19 @@ func (e *exe) constrain() error {
 	return nil
 }
 
-func (e *exe) setOomScoreAdj() error {
-	return os.WriteFile("/proc/self/oom_score_adj", []byte(strconv.Itoa(int(e.env.OOMScoreAdj))), 0644)
+func (e *exe) setOomScoreAdj(pid int) error {
+	return os.WriteFile(
+		fmt.Sprintf("/proc/%d/oom_score_adj", pid),
+		[]byte(strconv.Itoa(int(e.env.OOMScoreAdj))),
+		0644,
+	)
 }
 
 var (
 	memCacheRe = regexp.MustCompile(`file\s+(\d+)`)
 )
 
-func extractRe(s string, re *regexp.Regexp) uint64 {
+func extractRe(s string) uint64 {
 	matches := memCacheRe.FindStringSubmatch(s)
 	if len(matches) != 2 {
 		return 0

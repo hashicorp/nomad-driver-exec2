@@ -254,6 +254,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		"args", opts.Arguments,
 		"unveil_paths", opts.UnveilPaths,
 		"unveil_defaults", opts.UnveilDefaults,
+		"oom_score_adj", opts.OOMScoreAdj,
 	)
 
 	// create the runner and start it
