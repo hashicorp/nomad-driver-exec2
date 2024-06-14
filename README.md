@@ -206,7 +206,7 @@ config {
   access to the task (requires `unveil_by_task` in plugin config).
 
   - `oom_score_adj` - (optional) - The likelihood of the task being OOM killed,
-  must be a positive integer.
+  must be a positive integer. Defaults to `0`.
 
 ##### cpu
 
