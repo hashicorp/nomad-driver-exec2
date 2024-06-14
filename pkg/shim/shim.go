@@ -45,7 +45,7 @@ type Environment struct {
 	Memory       uint64            // memory in megabytes
 	MemoryMax    uint64            // memory_max in megabytes
 	CPUBandwidth uint64            // cpu / cores bandwidth
-	OOMScoreAdj  uint64            // oom_score_adj for the task
+	OOMScoreAdj  int               // oom_score_adj for the task
 }
 
 type ExecTwo interface {
@@ -143,8 +143,10 @@ func (e *exe) Start(ctx context.Context) error {
 	}
 
 	// set oom_score_adj
-	if err = e.setOomScoreAdj(cmd.Process.Pid); err != nil {
-		return fmt.Errorf("failed to set oom score adj: %w", err)
+	if e.env.OOMScoreAdj > 0 {
+		if err = e.setOomScoreAdj(cmd.Process.Pid); err != nil {
+			return fmt.Errorf("failed to set oom score adj: %w", err)
+		}
 	}
 
 	// attach to the underlying unix process
@@ -378,6 +380,13 @@ func (e *exe) constrain() error {
 }
 
 func (e *exe) setOomScoreAdj(pid int) error {
+	// make sure descendants of this process do not end up in the same oom group
+	// and thus inherit oom_score_adj settings
+	// https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#memory-interface-files
+	if err := e.writeCG("memory.oom.group", "0"); err != nil {
+		return err
+	}
+
 	return os.WriteFile(
 		fmt.Sprintf("/proc/%d/oom_score_adj", pid),
 		[]byte(strconv.Itoa(int(e.env.OOMScoreAdj))),

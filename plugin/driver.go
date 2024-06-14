@@ -225,6 +225,13 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		config.Env,
 	)
 
+	// set the task execution runtime options
+	opts, err := p.setOptions(config)
+	if err != nil {
+		p.logger.Error("failed to parse options: %v", err)
+		return nil, nil, err
+	}
+
 	// set the task execution environment
 	// no task logging yet; that is setup in the shim
 	env := &shim.Environment{
@@ -238,14 +245,10 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		Memory:       memory,
 		MemoryMax:    memoryMax,
 		CPUBandwidth: bandwidth,
+		OOMScoreAdj:  opts.OOMScoreAdj,
 	}
 
-	// set the task execution runtime options
-	opts, err := p.setOptions(config)
-	if err != nil {
-		p.logger.Error("failed to parse options: %v", err)
-		return nil, nil, err
-	}
+	// set the oom_score_adj
 
 	// what is about to happen
 	p.logger.Info(
