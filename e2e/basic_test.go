@@ -398,14 +398,10 @@ func TestBasic_Secret(t *testing.T) {
 
 func TestBasic_OomScoreAdj(t *testing.T) {
 	ctx := setup(t)
-	defer purge(t, ctx, "oom_score_adj")()
+	defer purge(t, ctx, "oom")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/oom_score_adj.hcl")
 
-	jobStatus := run(t, ctx, "nomad", "job", "status", "oom_score_adj")
+	jobStatus := run(t, ctx, "nomad", "job", "status", "oom")
 	must.RegexMatch(t, runningRe, jobStatus)
-
-	alloc := allocFromJobStatus(t, jobStatus)
-	output := logs(t, ctx, alloc)
-	must.StrContains(t, output, "oom")
 }

@@ -1,7 +1,7 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-job "oom_score_adj" {
+job "oom" {
   type = "service"
 
   constraint {
@@ -20,13 +20,18 @@ job "oom_score_adj" {
       mode     = "fail"
     }
 
-    task "oom_score_adj" {
+    task "oom" {
       driver = "exec2"
 
       config {
         command       = "sleep"
         args          = ["infinity"]
         oom_score_adj = 500
+      }
+
+      resources {
+        cpu    = 100
+        memory = 32
       }
     }
   }
