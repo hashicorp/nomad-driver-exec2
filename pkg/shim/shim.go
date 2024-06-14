@@ -380,13 +380,6 @@ func (e *exe) constrain() error {
 }
 
 func (e *exe) setOomScoreAdj(pid int) error {
-	// make sure descendants of this process do not end up in the same oom group
-	// and thus inherit oom_score_adj settings
-	// https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#memory-interface-files
-	if err := e.writeCG("memory.oom.group", "0"); err != nil {
-		return err
-	}
-
 	return os.WriteFile(
 		fmt.Sprintf("/proc/%d/oom_score_adj", pid),
 		[]byte(strconv.Itoa(int(e.env.OOMScoreAdj))),
