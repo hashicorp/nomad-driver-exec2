@@ -402,6 +402,10 @@ func TestBasic_OomScoreAdj(t *testing.T) {
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/oom_score_adj.hcl")
 
-	statusOutput := run(t, ctx, "nomad", "job", "status", "oom_score_adj")
-	alloc := allocFromJobStatus(t, statusOutput)
+	jobStatus := run(t, ctx, "nomad", "job", "status", "oom_score_adj")
+	must.RegexMatch(t, runningRe, jobStatus)
+
+	alloc := allocFromJobStatus(t, jobStatus)
+	output := logs(t, ctx, alloc)
+	must.StrContains(t, output, "oom")
 }
