@@ -402,6 +402,16 @@ func TestBasic_OomScoreAdj(t *testing.T) {
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/oom_score_adj.hcl")
 
+	// run the job
 	jobStatus := run(t, ctx, "nomad", "job", "status", "oom")
 	must.RegexMatch(t, runningRe, jobStatus)
+
+	// stop the job
+	stopOutput := run(t, ctx, "nomad", "job", "stop", "oom")
+	must.StrContains(t, stopOutput, `finished with status "complete"`)
+
+	// check job is stopped
+	stopStatus := run(t, ctx, "nomad", "job", "status", "oom")
+	stoppedRe := regexp.MustCompile(`Status\s+=\s+dead\s+\(stopped\)`)
+	must.RegexMatch(t, stoppedRe, stopStatus)
 }
