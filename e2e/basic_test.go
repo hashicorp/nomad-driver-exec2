@@ -395,3 +395,13 @@ func TestBasic_Secret(t *testing.T) {
 	tokenRe := regexp.MustCompile(`[\w-]+`)
 	must.RegexMatch(t, tokenRe, output)
 }
+
+func TestBasic_OomScoreAdj(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "oom_score_adj")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/oom_score_adj.hcl")
+
+	statusOutput := run(t, ctx, "nomad", "job", "status", "oom_score_adj")
+	alloc := allocFromJobStatus(t, statusOutput)
+}
