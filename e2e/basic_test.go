@@ -13,6 +13,7 @@ package shim
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -406,12 +407,12 @@ func TestBasic_OomScoreAdj(t *testing.T) {
 	jobStatus := run(t, ctx, "nomad", "job", "status", "oom")
 	must.RegexMatch(t, runningRe, jobStatus)
 
-	// stop the job
-	stopOutput := run(t, ctx, "nomad", "job", "stop", "oom")
-	must.StrContains(t, stopOutput, `finished with status "complete"`)
+	// get the pid
+	pid := run(t, ctx, "pidof", "/usr/bin/sleep")
 
-	// check job is stopped
-	stopStatus := run(t, ctx, "nomad", "job", "status", "oom")
-	stoppedRe := regexp.MustCompile(`Status\s+=\s+dead\s+\(stopped\)`)
-	must.RegexMatch(t, stoppedRe, stopStatus)
+	// check the oom_score_adj
+	oomScore, err := os.ReadFile(fmt.Sprintf("/proc/%s/oom_score_adj", pid))
+	must.NoError(t, err)
+
+	must.Eq(t, "500", strings.TrimSuffix(string(oomScore), "\n"))
 }
