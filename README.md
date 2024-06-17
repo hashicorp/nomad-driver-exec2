@@ -188,9 +188,10 @@ plugin configuration.
 
 ```hcl
 config {
-  command = "/usr/bin/cat"
-  args    = ["/etc/os-release"]
-  unveil  = ["r:/etc/os-release"]
+  command       = "/usr/bin/cat"
+  args          = ["/etc/os-release"]
+  unveil        = ["r:/etc/os-release"]
+  oom_score_adj = 500
 }
 ```
 
@@ -203,6 +204,9 @@ config {
 
   - `unveil` - (optional) - A list of additional filesystem paths to provide
   access to the task (requires `unveil_by_task` in plugin config).
+
+  - `oom_score_adj` - (optional) - The likelihood of the task being OOM killed,
+  must be a positive integer. Defaults to `0`.
 
 ##### cpu
 

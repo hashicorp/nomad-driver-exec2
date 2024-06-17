@@ -225,6 +225,13 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		config.Env,
 	)
 
+	// set the task execution runtime options
+	opts, err := p.setOptions(config)
+	if err != nil {
+		p.logger.Error("failed to parse options: %v", err)
+		return nil, nil, err
+	}
+
 	// set the task execution environment
 	// no task logging yet; that is setup in the shim
 	env := &shim.Environment{
@@ -238,13 +245,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		Memory:       memory,
 		MemoryMax:    memoryMax,
 		CPUBandwidth: bandwidth,
-	}
-
-	// set the task execution runtime options
-	opts, err := p.setOptions(config)
-	if err != nil {
-		p.logger.Error("failed to parse options: %v", err)
-		return nil, nil, err
+		OOMScoreAdj:  opts.OOMScoreAdj,
 	}
 
 	// what is about to happen
@@ -254,6 +255,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		"args", opts.Arguments,
 		"unveil_paths", opts.UnveilPaths,
 		"unveil_defaults", opts.UnveilDefaults,
+		"oom_score_adj", opts.OOMScoreAdj,
 	)
 
 	// create the runner and start it
@@ -533,5 +535,6 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		Arguments:      taskConfig.Args,
 		UnveilPaths:    unveil,
 		UnveilDefaults: p.config.UnveilDefaults,
+		OOMScoreAdj:    taskConfig.OOMScoreAdj,
 	}, nil
 }

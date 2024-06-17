@@ -13,6 +13,7 @@ package shim
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -394,4 +395,24 @@ func TestBasic_Secret(t *testing.T) {
 	output := logs(t, ctx, alloc)
 	tokenRe := regexp.MustCompile(`[\w-]+`)
 	must.RegexMatch(t, tokenRe, output)
+}
+
+func TestBasic_OomScoreAdj(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "oom")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/oom_score_adj.hcl")
+
+	// run the job
+	jobStatus := run(t, ctx, "nomad", "job", "status", "oom")
+	must.RegexMatch(t, runningRe, jobStatus)
+
+	// get the pid
+	pid := run(t, ctx, "pidof", "/usr/bin/sleep")
+
+	// check the oom_score_adj
+	oomScore, err := os.ReadFile(fmt.Sprintf("/proc/%s/oom_score_adj", pid))
+	must.NoError(t, err)
+
+	must.Eq(t, "500", strings.TrimSuffix(string(oomScore), "\n"))
 }

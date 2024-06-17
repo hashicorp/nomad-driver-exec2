@@ -30,6 +30,7 @@ type Options struct {
 	Arguments      []string
 	UnveilPaths    []string
 	UnveilDefaults bool
+	OOMScoreAdj    int
 }
 
 // Environment represents runtime configuration.
@@ -44,6 +45,7 @@ type Environment struct {
 	Memory       uint64            // memory in megabytes
 	MemoryMax    uint64            // memory_max in megabytes
 	CPUBandwidth uint64            // cpu / cores bandwidth
+	OOMScoreAdj  int               // oom_score_adj for the task
 }
 
 type ExecTwo interface {
@@ -140,6 +142,13 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
 
+	// set oom_score_adj
+	if e.env.OOMScoreAdj > 0 {
+		if err = e.setOomScoreAdj(cmd.Process.Pid); err != nil {
+			return fmt.Errorf("failed to set oom score adj: %w", err)
+		}
+	}
+
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
 	e.signals = process.Signals(cmd.Process.Pid)
@@ -188,7 +197,7 @@ func (e *exe) Stats() *resources.Utilization {
 	swapCurrent, _ := strconv.Atoi(swapCurrentS)
 
 	memStatS, _ := e.readCG("memory.stat")
-	memCache := extractRe(memStatS, memCacheRe)
+	memCache := extractRe(memStatS)
 
 	cpuStatsS, _ := e.readCG("cpu.stat")
 	usr, system, total := extractCPU(cpuStatsS)
@@ -370,11 +379,19 @@ func (e *exe) constrain() error {
 	return nil
 }
 
+func (e *exe) setOomScoreAdj(pid int) error {
+	return os.WriteFile(
+		fmt.Sprintf("/proc/%d/oom_score_adj", pid),
+		[]byte(strconv.Itoa(int(e.env.OOMScoreAdj))),
+		0644,
+	)
+}
+
 var (
 	memCacheRe = regexp.MustCompile(`file\s+(\d+)`)
 )
 
-func extractRe(s string, re *regexp.Regexp) uint64 {
+func extractRe(s string) uint64 {
 	matches := memCacheRe.FindStringSubmatch(s)
 	if len(matches) != 2 {
 		return 0

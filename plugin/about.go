@@ -56,9 +56,10 @@ var driverConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 
 // taskConfigSpec is the HCL configuration set for the task on the jobspec
 var taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-	"command": hclspec.NewAttr("command", "string", true),
-	"args":    hclspec.NewAttr("args", "list(string)", false),
-	"unveil":  hclspec.NewAttr("unveil", "list(string)", false),
+	"command":       hclspec.NewAttr("command", "string", true),
+	"args":          hclspec.NewAttr("args", "list(string)", false),
+	"unveil":        hclspec.NewAttr("unveil", "list(string)", false),
+	"oom_score_adj": hclspec.NewAttr("oom_score_adj", "number", false),
 })
 
 var capabilities = &drivers.Capabilities{
@@ -87,7 +88,8 @@ type Config struct {
 // TaskConfig represents the exec2 driver task configuration that gets set in
 // a Nomad job file.
 type TaskConfig struct {
-	Command string   `codec:"command"`
-	Args    []string `codec:"args"`
-	Unveil  []string `codec:"unveil"`
+	Command     string   `codec:"command"`
+	Args        []string `codec:"args"`
+	Unveil      []string `codec:"unveil"`
+	OOMScoreAdj int      `codec:"oom_score_adj"`
 }
