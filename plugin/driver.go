@@ -248,8 +248,6 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		OOMScoreAdj:  opts.OOMScoreAdj,
 	}
 
-	// set the oom_score_adj
-
 	// what is about to happen
 	p.logger.Info(
 		"exec2 runner",
