@@ -1,4 +1,4 @@
-## UNRELEASED
+## 0.1.0-beta.2 (July 18, 2024)
 
 IMPROVEMENTS:
 
