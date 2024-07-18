@@ -1,5 +1,7 @@
 ## UNRELEASED
 
+## 0.1.0-beta.2 (July 18, 2024)
+
 IMPROVEMENTS:
 
 * Implemented support for setting `oom_score_adj` on a per-task basis. [GH-40](https://github.com/hashicorp/nomad-driver-exec2/pull/40)
