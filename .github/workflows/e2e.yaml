@@ -17,14 +17,6 @@ jobs:
           wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo dd of=/usr/share/keyrings/hashicorp-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo dd of=/etc/apt/sources.list.d/hashicorp.list
           sudo apt update && sudo apt install nomad
-
-          # download main and build that
-          cd /tmp
-          git clone --depth=1 -b main https://github.com/hashicorp/nomad
-          cd nomad
-          make bootstrap
-          make pkg/linux_amd64/nomad
-          sudo mv pkg/linux_amd64/nomad /usr/bin/nomad
           nomad version
       - name: Install CNI
         run: |
@@ -59,4 +51,3 @@ jobs:
           go test -tags=e2e -count=1 -v ./e2e
 permissions:
   contents: read
-
