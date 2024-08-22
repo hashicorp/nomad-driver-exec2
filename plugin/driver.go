@@ -207,7 +207,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	// compute cpu bandwidth value
 	bandwidth, err := resources.Bandwidth(uint64(config.Resources.NomadResources.Cpu.CpuShares))
 	if err != nil {
-		p.logger.Error("failed to compute cpu bandwidth: %w", err)
+		p.logger.Error("failed to compute cpu bandwidth", "error", err)
 		return nil, nil, fmt.Errorf("failed to compute cpu bandwidth: %w", err)
 	}
 
@@ -228,7 +228,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	// set the task execution runtime options
 	opts, err := p.setOptions(config)
 	if err != nil {
-		p.logger.Error("failed to parse options: %v", err)
+		p.logger.Error("failed to parse options", "error", err)
 		return nil, nil, err
 	}
 

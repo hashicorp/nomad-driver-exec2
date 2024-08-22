@@ -76,7 +76,7 @@ func init() {
 
 		// give ourselves a way to write to the stderr pipe for printing fatal errors
 		debug := func(format string, args ...any) {
-			_, _ = io.WriteString(stderr, fmt.Sprintf(format, args...))
+			_, _ = io.WriteString(stderr, fmt.Sprintf(format+"\n", args...))
 		}
 
 		// use landlock to isolate this process and child processes to the
