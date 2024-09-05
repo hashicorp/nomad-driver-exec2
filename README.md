@@ -15,8 +15,9 @@ ordinary file system permissions.
 - Commands `unshare` and `nsenter`
 - Nomad client running as root
 
-Recent mainstream Linux distributions such as Ubuntu 22.04 and RHEL 9 meet the
-requirements and are well supported.
+Recent mainstream Linux distributions such as Ubuntu 22.04 and Fedora 36 meet
+the requirements and are well supported. RHEL does not currently enable Landlock
+and therefore cannot be supported.
 
 ### Simple Example
 
@@ -54,7 +55,7 @@ environment variables `$NOMAD_TASK_DIR` and `$NOMAD_ALLOC_DIR` respectively.
 
 A file access mode must also be specified when granting additional filesystem
 access to a path. This is done by prefixing the path with `'r'`, `'w'`, `'x'`,
-and/or `'c'` indicating read, write, executable, and create permissions, 
+and/or `'c'` indicating read, write, executable, and create permissions,
 respectively. e.g.,
 
   - `r:/srv/www` - read-only access to `/srv/www`
@@ -306,7 +307,7 @@ EOH
 
 #### java programs
 
-This example demonstrates the use of `java` to run a `Test.class` file 
+This example demonstrates the use of `java` to run a `Test.class` file
 located in the task's allocation directory. The JVM requires certain files
 on the host to work properly; on this system the task must unveil the
 `/etc/java-17-openjdk` path. On GitHub CI runners this might be located
