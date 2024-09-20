@@ -8,7 +8,7 @@ replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-202305
 require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-set/v2 v2.1.0
-	github.com/hashicorp/nomad v1.8.0
+	github.com/hashicorp/nomad v1.8.0-beta.1.0.20240805200658-b25f1b66cea0
 	github.com/shoenig/go-landlock v1.2.1
 	github.com/shoenig/test v1.8.2
 	golang.org/x/sys v0.22.0
@@ -38,7 +38,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/docker/cli v27.0.3+incompatible // indirect
-	github.com/docker/docker v27.0.3+incompatible // indirect
+	github.com/docker/docker v27.1.1+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.2 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -66,6 +66,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0 // indirect
+	github.com/hashicorp/go-kms-wrapping/v2 v2.0.16 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-plugin v1.6.1 // indirect
@@ -161,6 +162,5 @@ require (
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gotest.tools/v3 v3.5.1 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.70 // indirect
 )
