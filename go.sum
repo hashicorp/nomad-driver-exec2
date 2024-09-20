@@ -185,8 +185,6 @@ github.com/hashicorp/go-immutable-radix v1.3.1 h1:DKHmCUm2hRBK510BaiZlwvpD40f8bJ
 github.com/hashicorp/go-immutable-radix v1.3.1/go.mod h1:0y9vanUI8NX6FsYoO3zeMjhV/C5i9g4Q3DwcSNZ4P60=
 github.com/hashicorp/go-immutable-radix/v2 v2.1.0 h1:CUW5RYIcysz+D3B+l1mDeXrQ7fUvGGCwJfdASSzbrfo=
 github.com/hashicorp/go-immutable-radix/v2 v2.1.0/go.mod h1:hgdqLXA4f6NIjRVisM1TJ9aOJVNRqKZj+xDGF6m7PBw=
-github.com/hashicorp/go-kms-wrapping/v2 v2.0.16 h1:WZeXfD26QMWYC35at25KgE021SF9L3u9UMHK8fJAdV0=
-github.com/hashicorp/go-kms-wrapping/v2 v2.0.16/go.mod h1:ZiKZctjRTLEppuRwrttWkp71VYMbTTCkazK4xT7U/NQ=
 github.com/hashicorp/go-msgpack v0.5.5/go.mod h1:ahLV/dePpqEmjfWmKiqvPkv/twdG7iPBM1vqhUKIvfM=
 github.com/hashicorp/go-msgpack/v2 v2.1.2 h1:4Ee8FTp834e+ewB71RDrQ0VKpyFdrKOjvYtnQ/ltVj0=
 github.com/hashicorp/go-msgpack/v2 v2.1.2/go.mod h1:upybraOAblm4S7rx0+jeNy+CWWhzywQsSRV5033mMu4=
@@ -230,8 +228,8 @@ github.com/hashicorp/hcl/v2 v2.21.0 h1:lve4q/o/2rqwYOgUg3y3V2YPyD1/zkCLGjIV74Jit
 github.com/hashicorp/hcl/v2 v2.21.0/go.mod h1:62ZYHrXgPoX8xBnzl8QzbWq4dyDsDtfCRgIq1rbJEvA=
 github.com/hashicorp/memberlist v0.5.1 h1:mk5dRuzeDNis2bi6LLoQIXfMH7JQvAzt3mQD0vNZZUo=
 github.com/hashicorp/memberlist v0.5.1/go.mod h1:zGDXV6AqbDTKTM6yxW0I4+JtFzZAJVoIPvss4hV8F24=
-github.com/hashicorp/nomad v1.8.0-beta.1.0.20240718141842-857f20e0ba41 h1:kL2F6pikwn6UBIfvrPi70OemIGkGUZm4dqD5iidD8ho=
-github.com/hashicorp/nomad v1.8.0-beta.1.0.20240718141842-857f20e0ba41/go.mod h1:+OetDybcAtKKTdZfBdI3LYYZC6i0KGDML4CHaXW31WE=
+github.com/hashicorp/nomad v1.8.0 h1:c3IcPvq8olXNYevFm3aR3CujFwbU3969oU7HBMrCsSM=
+github.com/hashicorp/nomad v1.8.0/go.mod h1:SAb/TiO6JskCFTxKfWJKeEqZ/iWsvzDzUgRk2X/eI3Y=
 github.com/hashicorp/raft v1.2.0/go.mod h1:vPAJM8Asw6u8LxC3eJCUZmRP/E4QmUGE1R7g7k8sG/8=
 github.com/hashicorp/raft v1.7.0 h1:4u24Qn6lQ6uwziM++UgsyiT64Q8GyRn43CV41qPiz1o=
 github.com/hashicorp/raft v1.7.0/go.mod h1:N1sKh6Vn47mrWvEArQgILTyng8GoDRNYlgKyK7PMjs0=
