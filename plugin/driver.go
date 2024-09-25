@@ -434,8 +434,28 @@ func (*Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*dr
 
 // ExecTaskStreaming is not yet implemented.
 func (*Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
-	// TODO(shoenig): implement this.
-	return nil, errors.New("ExecTaskStreaming is not yet implemented")
+	// uh run something? figure out namespaces laterz
+
+	command := execOptions.Command[0]
+	args := execOptions.Command[1:]
+	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.Stdout = execOptions.Stdout
+	cmd.Stderr = execOptions.Stderr
+	cmd.Stdin = execOptions.Stdin
+
+	// is there a helper that does this?
+	// well ...
+
+	if err := cmd.Run(); err != nil {
+		return &drivers.ExitResult{
+			ExitCode: cmd.ProcessState.ExitCode(),
+			Err:      err,
+		}, err
+	}
+
+	return &drivers.ExitResult{
+		ExitCode: 0,
+	}, nil
 }
 
 // netns returns the filepath to the network namespace if the network
