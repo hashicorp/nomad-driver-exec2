@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-exec2/pkg/aexec"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/shim"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/task"
@@ -428,34 +430,25 @@ func (p *Plugin) SignalTask(taskID, signal string) error {
 
 // ExecTask is not yet implemented.
 func (*Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
-	// TODO(shoenig): implement this.
+	ctx, cancel := context.WithTimeout(timeout)
+	defer cancel()
+
+	opts := &drivers.ExecOptions{
+		Tty:    false,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	}
+
+	return aexec.RunPlain(ctx)
 	return nil, errors.New("ExecTask is not yet implemented")
 }
 
 // ExecTaskStreaming is not yet implemented.
 func (*Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
-	// uh run something? figure out namespaces laterz
-
-	command := execOptions.Command[0]
-	args := execOptions.Command[1:]
-	cmd := exec.CommandContext(ctx, command, args...)
-	cmd.Stdout = execOptions.Stdout
-	cmd.Stderr = execOptions.Stderr
-	cmd.Stdin = execOptions.Stdin
-
-	// is there a helper that does this?
-	// well ...
-
-	if err := cmd.Run(); err != nil {
-		return &drivers.ExitResult{
-			ExitCode: cmd.ProcessState.ExitCode(),
-			Err:      err,
-		}, err
+	if execOptions.Tty {
+		return aexec.RunTTY(ctx)
 	}
-
-	return &drivers.ExitResult{
-		ExitCode: 0,
-	}, nil
+	return aexec.RunPlain(ctx, execOptions)
 }
 
 // netns returns the filepath to the network namespace if the network
