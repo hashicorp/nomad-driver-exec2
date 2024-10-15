@@ -1,4 +1,6 @@
-## UNRELEASED
+## 0.1.0 (October 15, 2024)
+
+GA release of exec2! v0.1.0
 
 ## 0.1.0-beta.2 (July 18, 2024)
 
