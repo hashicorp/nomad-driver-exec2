@@ -32,7 +32,14 @@ func newTestHarness(t *testing.T, pluginConfig *Config) *dtests.DriverHarness {
 	logger := testlog.HCLogger(t)
 	plugin := New(logger).(*Plugin)
 
-	baseConfig := new(base.Config)
+	// set a base config with reasonable topology
+	baseConfig := &base.Config{
+		AgentConfig: &base.AgentConfig{
+			Driver: &base.ClientDriverConfig{
+				Topology: structs.MockWorkstationTopology(),
+			},
+		},
+	}
 
 	// encode and set plugin config
 	must.NoError(t, base.MsgPackEncode(&baseConfig.PluginConfig, pluginConfig))

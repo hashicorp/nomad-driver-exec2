@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/nomad-driver-exec2/pkg/shim"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/task"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/util"
+	"github.com/hashicorp/nomad/client/lib/cpustats"
 	cstructs "github.com/hashicorp/nomad/client/structs"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/helper"
@@ -48,6 +49,9 @@ type Plugin struct {
 
 	// logger will log to the Nomad agent
 	logger hclog.Logger
+
+	// compute contains cpu compute information
+	compute cpustats.Compute
 }
 
 func New(log hclog.Logger) drivers.DriverPlugin {
@@ -78,11 +82,21 @@ func (p *Plugin) SetConfig(c *base.Config) error {
 		}
 	}
 
+	// If the plugin is being called with no agent config, nothing to do.
+	// This happens when Nomad is getting the version string, for example.
+	if c.AgentConfig.Driver == nil {
+		return nil
+	}
+
+	// Set the decoded compute object
+	p.compute = c.AgentConfig.Compute()
+	resources.SetSpecs(p.compute)
+
+	// Set the decoded config object
 	p.config = &config
 
 	// currently not much to validate on the plugin config, but if there was
 	// that step would go here
-
 	return nil
 }
 
