@@ -4,12 +4,10 @@
 package resources
 
 import (
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/hashicorp/nomad/client/lib/cpustats"
 )
 
 type MicroSecond uint64
@@ -67,77 +65,40 @@ func (t *TrackCPU) percent(t1, t2 MicroSecond, elapsed int64) Percent {
 }
 
 type Specs struct {
-	MHz   int
+	MHz   uint64
 	Cores int
 }
 
-func (s *Specs) Ticks() int {
-	return s.Cores * s.MHz
+func (s Specs) Ticks() uint64 {
+	return uint64(s.Cores) * s.MHz
 }
 
 var (
-	mhzRe       = regexp.MustCompile(`cpu MHz\s+:\s+(\d+)\.\d+`)
-	processorRe = regexp.MustCompile(`processor\s+:\s+(\d+)`)
+	lock  sync.Mutex
+	specs Specs
 )
 
-var (
-	specs *Specs
-	once  sync.Once
-)
+func SetSpecs(compute cpustats.Compute) {
+	perCore := uint64(compute.TotalCompute) / uint64(compute.NumCores)
 
-// GetSpecs returns the MHz and Cores of the detected CPU.
-//
-// Tries to read accurate information out of /sys/devices before falling
-// back to /proc/cpuinfo.
-//
-// TODO(shoenig): we should probably get this from the Topology plumbed into
-// the driver - which did not exist for the pledge driver when this code was
-// originally written.
-func GetSpecs() *Specs {
-	once.Do(func() {
-		var speed int
-		b, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
-		if err == nil {
-			i, err := strconv.Atoi(strings.TrimSpace(string(b)))
-			if err == nil {
-				speed = i / 1000
-			}
-		}
+	lock.Lock()
+	specs.MHz = perCore
+	specs.Cores = compute.NumCores
+	lock.Unlock()
+}
 
-		// need this for core count (for now) and fallback speeds
-		b, err = os.ReadFile("/proc/cpuinfo")
-		if err != nil {
-			panic("bug: cannot operate without /proc/cpuinfo")
-		}
-		content := string(b)
+func GetSpecs() Specs {
+	lock.Lock()
+	s := specs
+	lock.Unlock()
 
-		// if the devices info doesn't work (i.e. running on ec2), fallback to
-		// reading live frequencies from cpuinfo and pick the largest one
-		if speed == 0 {
-			results := mhzRe.FindAllStringSubmatch(content, -1)
-			for _, result := range results {
-				if mhz, _ := strconv.Atoi(result[1]); mhz > speed {
-					speed = mhz
-				}
-			}
-		}
-
-		// number of cores really means number of hyperthreads
-		cores := len(processorRe.FindAllStringSubmatch(content, -1))
-
-		// set our cache value
-		specs = &Specs{
-			MHz:   speed,
-			Cores: cores,
-		}
-	})
-	return specs
+	return s
 }
 
 // Bandwidth computes the CPU bandwidth given a mhz value from task config.
 // We assume the bandwidth per-core base is 100_000 which is the default.
 func Bandwidth(mhz uint64) (uint64, error) {
-	specs := GetSpecs()
-	v := (mhz * 100000) / uint64(specs.MHz)
+	speed := GetSpecs().MHz
+	v := (mhz * 100000) / speed
 	return v, nil
 }

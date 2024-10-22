@@ -204,7 +204,7 @@ func (e *exe) Stats() *resources.Utilization {
 	userPct, systemPct, totalPct := e.cpu.Percent(usr, system, total)
 
 	specs := resources.GetSpecs()
-	ticks := (.01 * totalPct) * resources.Percent(specs.Ticks()/specs.Cores)
+	ticks := (.01 * totalPct) * resources.Percent(int(specs.Ticks())/specs.Cores)
 
 	return &resources.Utilization{
 		// memory stats
