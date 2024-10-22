@@ -249,7 +249,8 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	}
 
 	// what is about to happen
-	p.logger.Info(
+	taskLogger := p.logger.With("alloc_id", config.AllocID, "task_name", config.Name)
+	taskLogger.Info(
 		"exec2 runner",
 		"cmd", opts.Command,
 		"args", opts.Arguments,
@@ -259,7 +260,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	)
 
 	// create the runner and start it
-	runner := shim.New(env, opts)
+	runner := shim.New(env, opts, taskLogger)
 	if err = runner.Start(p.ctx); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}
@@ -312,8 +313,12 @@ func (p *Plugin) RecoverTask(handle *drivers.TaskHandle) error {
 		Cgroup:  cgroup,
 	}
 
+	taskLogger := p.logger.With(
+		"alloc_id", taskState.TaskConfig.AllocID,
+		"task_name", taskState.TaskConfig.Name)
+
 	// re-establish task handle by locating the unix process of the PID
-	runner := shim.Recover(taskState.PID, env)
+	runner := shim.Recover(taskState.PID, env, taskLogger)
 	recHandle := task.RecreateHandle(runner, taskState.TaskConfig, taskState.StartedAt)
 	p.tasks.Set(taskState.TaskConfig.ID, recHandle)
 	return nil
