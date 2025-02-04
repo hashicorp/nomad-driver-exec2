@@ -1,5 +1,12 @@
 ## UNRELEASED
 
+## 0.1.1 (February 4, 2025)
+
+SECURITY:
+
+* Bump dependencies to latest versions. [GH-64](https://github.com/hashicorp/nomad-driver-exec2/pull/64)
+* Bump go to `v1.23.5`. [GH-64](https://github.com/hashicorp/nomad-driver-exec2/pull/65)
+
 ## 0.1.0 (October 15, 2024)
 
 GA release of exec2! v0.1.0
