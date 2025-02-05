@@ -1,6 +1,5 @@
 ## UNRELEASED
 
-## 0.1.1 (February 4, 2025)
 
 SECURITY:
 
