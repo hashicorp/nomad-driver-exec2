@@ -69,7 +69,6 @@ var capabilities = &drivers.Capabilities{
 	FSIsolation:          fsisolation.Unveil,
 	MustInitiateNetwork:  false,
 	MountConfigs:         drivers.MountConfigSupportNone,
-	RemoteTasks:          false,
 	NetIsolationModes: []drivers.NetIsolationMode{
 		drivers.NetIsolationModeNone,
 		drivers.NetIsolationModeHost,

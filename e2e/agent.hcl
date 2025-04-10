@@ -12,6 +12,10 @@ server {
   }
 }
 
+ui {
+  show_cli_hints = false
+}
+
 client {
   enabled = true
   options = {
