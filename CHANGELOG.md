@@ -1,5 +1,7 @@
 ## UNRELEASED
 
+* build: Update Nomad verison to 1.10.0. [GH-67](https://github.com/hashicorp/nomad-driver-exec2/pull/67)
+* build: Update Go to 1.24.2. [GH-67](https://github.com/hashicorp/nomad-driver-exec2/pull/67)
 
 SECURITY:
 
