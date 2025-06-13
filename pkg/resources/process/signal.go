@@ -39,8 +39,10 @@ func parse(s string) syscall.Signal {
 		return syscall.SIGTERM
 	case "sigstop":
 		return syscall.SIGSTOP
-	case "sigpwr":
-		return syscall.SIGPWR
+	// Conditional compilation to exclude SIGPWR on macOS
+	// +build !darwin
+    	case "sigpwr":
+        	return syscall.SIGPWR
 	default:
 		// not much else we can do
 		return syscall.Signal(0)
