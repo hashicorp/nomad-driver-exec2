@@ -249,7 +249,18 @@ func flatten(user, home string, env map[string]string) []string {
 	result := make([]string, 0, len(env))
 
 	// override and remove some variables
-	useless := set.From([]string{"LS_COLORS", "XAUTHORITY", "DISPLAY", "COLORTERM", "MAIL"})
+	ignoredEnv := set.From([]string{
+		// remove useless envs
+		"LS_COLORS",
+		"XAUTHORITY",
+		"DISPLAY",
+		"COLORTERM",
+		"MAIL",
+
+		// ignore attempts at preloading libs
+		"LD_PRELOAD",
+	})
+
 	env["USER"] = user
 	env["HOME"] = home
 
@@ -261,8 +272,8 @@ func flatten(user, home string, env map[string]string) []string {
 	// copy environment variables into list form
 	for k, v := range env {
 		switch {
-		case useless.Contains(k):
-			continue // purge some useless variables
+		case ignoredEnv.Contains(k):
+			continue // skip setting ignored variables
 		case v == "":
 			result = append(result, k)
 		default:
