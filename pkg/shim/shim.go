@@ -256,9 +256,6 @@ func flatten(user, home string, env map[string]string) []string {
 		"DISPLAY",
 		"COLORTERM",
 		"MAIL",
-
-		// ignore attempts at preloading libs
-		"LD_PRELOAD",
 	})
 
 	env["USER"] = user
@@ -272,8 +269,8 @@ func flatten(user, home string, env map[string]string) []string {
 	// copy environment variables into list form
 	for k, v := range env {
 		switch {
-		case ignoredEnv.Contains(k):
-			continue // skip setting ignored variables
+		case ignoredEnv.Contains(k) || strings.HasPrefix(k, "LD_"):
+			continue // skip setting ignored or dynamic linker variables
 		case v == "":
 			result = append(result, k)
 		default:
