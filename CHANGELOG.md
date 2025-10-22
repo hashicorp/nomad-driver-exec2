@@ -5,6 +5,7 @@
 
 SECURITY:
 
+* Ignore setting LD_* environment variables which can lead to privileged code execution. [GH-76](https://github.com/hashicorp/nomad-driver-exec2/pull/76)
 * Bump dependencies to latest versions. [GH-64](https://github.com/hashicorp/nomad-driver-exec2/pull/64)
 * Bump go to `v1.23.5`. [GH-64](https://github.com/hashicorp/nomad-driver-exec2/pull/65)
 
