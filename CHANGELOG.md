@@ -1,4 +1,4 @@
-## UNRELEASED
+## 0.1.1 (October 22, 2025)
 
 * build: Update Nomad version to 1.10.2. [GH-71](https://github.com/hashicorp/nomad-driver-exec2/pull/71)
 * build: Update Go to 1.24.4. [GH-71](https://github.com/hashicorp/nomad-driver-exec2/pull/71)
