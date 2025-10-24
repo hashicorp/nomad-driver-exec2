@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-set/v2"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources/process"
@@ -79,16 +80,17 @@ type ExecTwo interface {
 }
 
 // New an ExecTwo, an instantiation of the exec2 driver.
-func New(env *Environment, opts *Options) ExecTwo {
+func New(env *Environment, opts *Options, l hclog.Logger) ExecTwo {
 	return &exe{
-		env:  env,
-		opts: opts,
-		cpu:  new(resources.TrackCPU),
+		env:    env,
+		opts:   opts,
+		cpu:    new(resources.TrackCPU),
+		logger: l,
 	}
 }
 
 // Recover an ExecTwo, an already running instance of the execc2 driver.
-func Recover(pid int, env *Environment) ExecTwo {
+func Recover(pid int, env *Environment, l hclog.Logger) ExecTwo {
 	return &exe{
 		pid:     pid,
 		env:     env,
@@ -96,6 +98,7 @@ func Recover(pid int, env *Environment) ExecTwo {
 		waiter:  process.WaitPID(pid, env.TaskDir).Wait(),
 		signals: process.Signals(pid),
 		cpu:     new(resources.TrackCPU),
+		logger:  l,
 	}
 }
 
@@ -109,6 +112,9 @@ type exe struct {
 	cpu     *resources.TrackCPU
 	waiter  process.WaitCh
 	signals process.Signaler
+
+	// comes from New/Recover
+	logger hclog.Logger
 }
 
 func (e *exe) Start(ctx context.Context) error {
@@ -351,8 +357,19 @@ func (e *exe) parameters(uid, gid int) []string {
 func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.Cmd {
 	params := e.parameters(uid, gid)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
-	cmd.Stdout = nil // nsenter and unshare do not log
-	cmd.Stderr = nil // nsenter and unshare do not log
+
+	outfd, err := os.OpenFile(e.env.OutPipe, os.O_WRONLY, 0700)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stdout = outfd
+
+	errfd, err := os.OpenFile(e.env.OutPipe, os.O_WRONLY, 0700)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stderr = errfd // nsenter and unshare do not log
+
 	cmd.Env = flatten(e.env.User, home, e.env.Env)
 	cmd.Dir = e.env.TaskDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -360,6 +377,7 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.
 		CgroupFD:    fd,   // cgroup file descriptor
 		Setpgid:     true, // ignore signals sent to nomad
 	}
+
 	return cmd
 }
 
