@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2024, 2025
 # SPDX-License-Identifier: MPL-2.0
 
 # intended to be used in conjunction with -dev mode; namely by invoking the
