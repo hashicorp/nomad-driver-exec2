@@ -103,7 +103,7 @@ func init() {
 		var code = 0
 		if err = cmd.Run(); err != nil {
 			ee := err.(*exec.ExitError)
-			code = ee.ProcessState.ExitCode()
+			code = ee.ExitCode()
 		}
 
 		_ = stdout.Close()
