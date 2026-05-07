@@ -4,10 +4,10 @@
 package util
 
 import (
+	"fmt"
 	"io"
 	"os"
-
-	"golang.org/x/sys/unix"
+	"path/filepath"
 )
 
 // NullCloser returns an implementation of io.WriteCloser that will always
@@ -28,13 +28,31 @@ func (*writeCloser) Close() error {
 //
 // The returned values must be closed by the caller.
 func OpenPipes(stdout, stderr string) (io.WriteCloser, io.WriteCloser, error) {
-	a, err := os.OpenFile(stdout, unix.O_WRONLY, os.ModeNamedPipe)
+	a, err := openpipe(stdout)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err := os.OpenFile(stderr, unix.O_WRONLY, os.ModeNamedPipe)
+	b, err := openpipe(stderr)
 	if err != nil {
 		return nil, nil, err
 	}
 	return a, b, nil
+}
+
+func openpipe(path string) (io.WriteCloser, error) {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("error opening fifo parent directory %q: %w", dir, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	// also uses O_NOFOLLOW under the hood
+	f, err := root.OpenFile(base, os.O_WRONLY, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error opening writer at %s: %w", path, err)
+	}
+	return f, nil
 }
