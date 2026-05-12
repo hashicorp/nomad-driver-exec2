@@ -158,13 +158,26 @@ func (e *exe) Start(ctx context.Context) error {
 }
 
 func (e *exe) fixPipes(uid, gid int) error {
-	if err := os.Chown(e.env.OutPipe, uid, gid); err != nil {
+	if err := fixpipe(e.env.OutPipe, uid, gid); err != nil {
 		return err
 	}
-	if err := os.Chown(e.env.ErrPipe, uid, gid); err != nil {
+	if err := fixpipe(e.env.ErrPipe, uid, gid); err != nil {
 		return err
 	}
 	return nil
+}
+
+func fixpipe(path string, uid, gid int) error {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("error opening fifo parent directory %q: %w", dir, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	return root.Chown(base, uid, gid)
 }
 
 func (e *exe) PID() int {
