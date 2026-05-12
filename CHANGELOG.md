@@ -1,4 +1,4 @@
-## UNRELEASED
+## 0.1.2 (May 12, 2026)
 
 SECURITY:
 * Protect logging FIFO from symlink swap attacks (CVE-2026-8052) [GH-87](https://github.com/hashicorp/nomad-driver-exec2/issues/87)
