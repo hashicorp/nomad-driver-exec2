@@ -1,0 +1,16 @@
+# Copyright IBM Corp. 2024, 2026
+# SPDX-License-Identifier: MPL-2.0
+
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    labels:
+      - "dependencies"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      go:
+        patterns:
+          - "*"
