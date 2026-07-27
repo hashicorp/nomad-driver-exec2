@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources/process"
 	"github.com/hashicorp/nomad/helper/users/dynamic"
+	"github.com/hashicorp/nomad/plugins/drivers"
 	"golang.org/x/sys/unix"
 )
 
@@ -113,6 +114,11 @@ type exe struct {
 	waiter  process.WaitCh
 	signals process.Signaler
 
+	// pipe file descriptors opened for the wrapper process (nsenter/unshare);
+	// opened in prepare() and closed once the process exits
+	outfd *os.File
+	errfd *os.File
+
 	// comes from New/Recover
 	logger hclog.Logger
 }
@@ -143,8 +149,15 @@ func (e *exe) Start(ctx context.Context) error {
 	}
 
 	// create sandbox using nsenter, unshare, and our cgroup
-	cmd := e.prepare(ctx, home, fd, uid, gid)
+	cmd, err := e.prepare(ctx, home, fd, uid, gid)
+	if err != nil {
+		return err
+	}
+
 	if err = cmd.Start(); err != nil {
+		// prepare() opened the pipe FDs; close them since no waiter will run
+		_ = e.outfd.Close()
+		_ = e.errfd.Close()
 		return fmt.Errorf("failed to start command: %w", err)
 	}
 
@@ -158,7 +171,17 @@ func (e *exe) Start(ctx context.Context) error {
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
 	e.signals = process.Signals(cmd.Process.Pid)
-	e.waiter = process.WaitProc(cmd.Process).Wait()
+
+	// close the pipe file descriptors after the process exits
+	inner := process.WaitProc(cmd.Process).Wait()
+	waiter := make(chan *drivers.ExitResult, 1)
+	go func() {
+		result := <-inner
+		_ = e.outfd.Close()
+		_ = e.errfd.Close()
+		waiter <- result
+	}()
+	e.waiter = waiter
 
 	return nil
 }
@@ -346,21 +369,24 @@ func (e *exe) parameters(uid, gid int) []string {
 }
 
 // create an exec.Cmd to run our process tree
-func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.Cmd {
+func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) (*exec.Cmd, error) {
 	params := e.parameters(uid, gid)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
 
 	outfd, err := os.OpenFile(e.env.OutPipe, os.O_WRONLY, 0700)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to open stdout pipe: %w", err)
 	}
 	cmd.Stdout = outfd
+	e.outfd = outfd
 
-	errfd, err := os.OpenFile(e.env.OutPipe, os.O_WRONLY, 0700)
+	errfd, err := os.OpenFile(e.env.ErrPipe, os.O_WRONLY, 0700)
 	if err != nil {
-		panic(err)
+		_ = outfd.Close()
+		return nil, fmt.Errorf("failed to open stderr pipe: %w", err)
 	}
-	cmd.Stderr = errfd // nsenter and unshare do not log
+	cmd.Stderr = errfd
+	e.errfd = errfd
 
 	cmd.Env = flatten(e.env.User, home, e.env.Env)
 	cmd.Dir = e.env.TaskDir
@@ -370,7 +396,7 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.
 		Setpgid:     true, // ignore signals sent to nomad
 	}
 
-	return cmd
+	return cmd, nil
 }
 
 // set resource constraints via cgroups

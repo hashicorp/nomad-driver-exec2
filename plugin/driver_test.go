@@ -278,7 +278,26 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
-		// try to execute a non-existent file
+		// stdout and stderr are routed to separate pipes — validates that
+		// cmd.Stdout and cmd.Stderr are wired to OutPipe and ErrPipe
+		// respectively (not both to OutPipe, which was the copy-paste bug)
+		{
+			name:           "stdout and stderr routed to correct pipes",
+			user:           "nomad-80000",
+			command:        "sh",
+			unveilDefaults: true,
+			args:           []string{"-c", "echo STDOUT_MARKER; echo STDERR_MARKER >&2"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`STDOUT_MARKER`),
+			stderrRe:       regexp.MustCompile(`STDERR_MARKER`),
+		},
+		// regression test for issue #20: exec2-shim writes its error to the
+		// stderr FIFO when it cannot locate the task command; before the fix
+		// cmd.Stderr was nil so the message was dropped — after the fix
+		// cmd.Stderr is wired to ErrPipe so it appears in the task log.
+		// Note: the exit-126 (unshare EACCES) path cannot be triggered in a
+		// unit test because self() resolves os.Executable() at runtime; see
+		// TESTGUIDE.md Part 1/2 for manual reproduction steps.
 		{
 			name:           "execute non-existent program",
 			user:           "nomad-80000",
