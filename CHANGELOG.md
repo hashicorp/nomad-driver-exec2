@@ -1,5 +1,26 @@
 ## UNRELEASED
 
+
+## 0.1.2 (May 12, 2026)
+
+SECURITY:
+* Protect logging FIFO from symlink swap attacks (CVE-2026-8052) [GH-87](https://github.com/hashicorp/nomad-driver-exec2/issues/87)
+
+IMPROVEMENTS:
+* build: Update Nomad version to 1.11.1. [GH-81](https://github.com/hashicorp/nomad-driver-exec2/pull/81)
+* build: Update Go to 1.25.3. [GH-81](https://github.com/hashicorp/nomad-driver-exec2/pull/81)
+
+## 0.1.1 (October 22, 2025)
+
+* build: Update Nomad version to 1.10.2. [GH-71](https://github.com/hashicorp/nomad-driver-exec2/pull/71)
+* build: Update Go to 1.24.4. [GH-71](https://github.com/hashicorp/nomad-driver-exec2/pull/71)
+
+SECURITY:
+
+* Ignore setting LD_* environment variables which can lead to privileged code execution. [GH-76](https://github.com/hashicorp/nomad-driver-exec2/pull/76)
+* Bump dependencies to latest versions. [GH-64](https://github.com/hashicorp/nomad-driver-exec2/pull/64)
+* Bump go to `v1.23.5`. [GH-64](https://github.com/hashicorp/nomad-driver-exec2/pull/65)
+
 BUG FIXES:
 
 * Fixed silent discard of `unshare`/`nsenter` stderr; errors now appear in `nomad alloc logs`. [[GH-61](https://github.com/hashicorp/nomad-driver-exec2/pull/61)]

@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package plugin
@@ -69,7 +69,6 @@ var capabilities = &drivers.Capabilities{
 	FSIsolation:          fsisolation.Unveil,
 	MustInitiateNetwork:  false,
 	MountConfigs:         drivers.MountConfigSupportNone,
-	RemoteTasks:          false,
 	NetIsolationModes: []drivers.NetIsolationMode{
 		drivers.NetIsolationModeNone,
 		drivers.NetIsolationModeHost,

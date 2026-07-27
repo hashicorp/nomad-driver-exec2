@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package shim
@@ -103,7 +103,7 @@ func init() {
 		var code = 0
 		if err = cmd.Run(); err != nil {
 			ee := err.(*exec.ExitError)
-			code = ee.ProcessState.ExitCode()
+			code = ee.ExitCode()
 		}
 
 		_ = stdout.Close()

@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package shim
@@ -187,13 +187,26 @@ func (e *exe) Start(ctx context.Context) error {
 }
 
 func (e *exe) fixPipes(uid, gid int) error {
-	if err := os.Chown(e.env.OutPipe, uid, gid); err != nil {
+	if err := fixpipe(e.env.OutPipe, uid, gid); err != nil {
 		return err
 	}
-	if err := os.Chown(e.env.ErrPipe, uid, gid); err != nil {
+	if err := fixpipe(e.env.ErrPipe, uid, gid); err != nil {
 		return err
 	}
 	return nil
+}
+
+func fixpipe(path string, uid, gid int) error {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("error opening fifo parent directory %q: %w", dir, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	return root.Chown(base, uid, gid)
 }
 
 func (e *exe) PID() int {
@@ -233,7 +246,7 @@ func (e *exe) Stats() *resources.Utilization {
 	userPct, systemPct, totalPct := e.cpu.Percent(usr, system, total)
 
 	specs := resources.GetSpecs()
-	ticks := (.01 * totalPct) * resources.Percent(specs.Ticks()/specs.Cores)
+	ticks := (.01 * totalPct) * resources.Percent(int(specs.Ticks())/specs.Cores)
 
 	return &resources.Utilization{
 		// memory stats
@@ -278,7 +291,15 @@ func flatten(user, home string, env map[string]string) []string {
 	result := make([]string, 0, len(env))
 
 	// override and remove some variables
-	useless := set.From([]string{"LS_COLORS", "XAUTHORITY", "DISPLAY", "COLORTERM", "MAIL"})
+	ignoredEnv := set.From([]string{
+		// remove useless envs
+		"LS_COLORS",
+		"XAUTHORITY",
+		"DISPLAY",
+		"COLORTERM",
+		"MAIL",
+	})
+
 	env["USER"] = user
 	env["HOME"] = home
 
@@ -290,8 +311,8 @@ func flatten(user, home string, env map[string]string) []string {
 	// copy environment variables into list form
 	for k, v := range env {
 		switch {
-		case useless.Contains(k):
-			continue // purge some useless variables
+		case ignoredEnv.Contains(k) || strings.HasPrefix(k, "LD_"):
+			continue // skip setting ignored or dynamic linker variables
 		case v == "":
 			result = append(result, k)
 		default:

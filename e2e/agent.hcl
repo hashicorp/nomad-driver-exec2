@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2024, 2026
 # SPDX-License-Identifier: MPL-2.0
 
 # intended to be used in conjunction with -dev mode; namely by invoking the
@@ -15,6 +15,10 @@ server {
   default_scheduler_config {
     memory_oversubscription_enabled = true
   }
+}
+
+ui {
+  show_cli_hints = false
 }
 
 client {

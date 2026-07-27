@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package version
@@ -11,7 +11,7 @@ var (
 
 	// Version is the main version number that is being run at the moment. It
 	// must conform to the format expected by github.com/hashicorp/go-version.
-	Version = "0.1.1"
+	Version = "0.1.3"
 
 	// VersionPrerelease is a pre-release marker for the version. If this is ""
 	// (empty string) then it means that it is a final release. Otherwise, this
