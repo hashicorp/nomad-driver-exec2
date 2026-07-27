@@ -394,14 +394,24 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) (*exec
 	params := e.parameters(uid, gid)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
 
-	outfd, err := os.OpenFile(e.env.OutPipe, os.O_WRONLY, 0700)
+	// Open the pipes via os.Root so that the open is resolved relative to
+	// the alloc logs directory and cannot be redirected outside it by a
+	// symlink swap attack across tasks or restarted tasks.
+	pipeDir := filepath.Dir(e.env.OutPipe)
+	root, err := os.OpenRoot(pipeDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pipe directory: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	outfd, err := root.OpenFile(filepath.Base(e.env.OutPipe), os.O_WRONLY, 0700)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open stdout pipe: %w", err)
 	}
 	cmd.Stdout = outfd
 	e.outfd = outfd
 
-	errfd, err := os.OpenFile(e.env.ErrPipe, os.O_WRONLY, 0700)
+	errfd, err := root.OpenFile(filepath.Base(e.env.ErrPipe), os.O_WRONLY, 0700)
 	if err != nil {
 		_ = outfd.Close()
 		return nil, fmt.Errorf("failed to open stderr pipe: %w", err)
