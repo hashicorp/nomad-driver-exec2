@@ -4,6 +4,11 @@
 # intended to be used in conjunction with -dev mode; namely by invoking the
 # 'make hack' Makefile target
 
+ui {
+  enabled        = true
+  show_cli_hints = false
+}
+
 server {
   enabled          = true
   bootstrap_expect = 1

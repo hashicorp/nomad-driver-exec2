@@ -1,5 +1,14 @@
 ## UNRELEASED
 
+BUG FIXES:
+
+* Fixed silent discard of `unshare`/`nsenter` stderr; errors now appear in `nomad alloc logs`. [[GH-61](https://github.com/hashicorp/nomad-driver-exec2/pull/61)]
+
+IMPROVEMENTS:
+
+* Added a `-version` flag to print the plugin version and git revision instead of the default go-plugin message, making it easier to verify which binary is deployed. [[GH-61](https://github.com/hashicorp/nomad-driver-exec2/pull/61)]
+* Log lines emitted from the shim now include `alloc_id` and `task_name` for easier correlation in multi-tenant environments. [[GH-61](https://github.com/hashicorp/nomad-driver-exec2/pull/61)]
+
 ## 0.1.0 (October 15, 2024)
 
 GA release of exec2! v0.1.0
