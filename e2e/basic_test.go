@@ -136,9 +136,7 @@ func TestPluginStarts(t *testing.T) {
 	ctx := setup(t)
 
 	// can connect to nomad
-	// strip any trailing CLI hint lines appended by newer Nomad versions
-	// (e.g. "==> View and manage Nomad jobs in the Web UI: ...")
-	jobs := strings.SplitN(run(t, ctx, "nomad", "job", "status"), "\n", 2)[0]
+	jobs := run(t, ctx, "nomad", "job", "status")
 	must.Eq(t, "No running jobs", jobs)
 
 	// exec2 plugin is present and healthy

@@ -13,7 +13,6 @@ server {
 }
 
 ui {
-  enabled        = true
   show_cli_hints = false
 }
 

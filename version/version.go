@@ -22,21 +22,3 @@ var (
 	VersionMetadata = ""
 )
 
-// Full version number.
-func Full() string {
-	out := "exec2 v" + Version
-
-	if VersionPrerelease != "" {
-		out += "-" + VersionPrerelease
-	}
-
-	if VersionMetadata != "" {
-		out += "+" + VersionMetadata
-	}
-
-	if GitCommit != "" {
-		out += "\nRevision " + GitCommit
-	}
-
-	return out
-}
