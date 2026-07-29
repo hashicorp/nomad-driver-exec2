@@ -17,10 +17,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-set/v2"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources/process"
 	"github.com/hashicorp/nomad/helper/users/dynamic"
+	"github.com/hashicorp/nomad/plugins/drivers"
 	"golang.org/x/sys/unix"
 )
 
@@ -79,16 +81,17 @@ type ExecTwo interface {
 }
 
 // New an ExecTwo, an instantiation of the exec2 driver.
-func New(env *Environment, opts *Options) ExecTwo {
+func New(env *Environment, opts *Options, l hclog.Logger) ExecTwo {
 	return &exe{
-		env:  env,
-		opts: opts,
-		cpu:  new(resources.TrackCPU),
+		env:    env,
+		opts:   opts,
+		cpu:    new(resources.TrackCPU),
+		logger: l,
 	}
 }
 
 // Recover an ExecTwo, an already running instance of the execc2 driver.
-func Recover(pid int, env *Environment) ExecTwo {
+func Recover(pid int, env *Environment, l hclog.Logger) ExecTwo {
 	return &exe{
 		pid:     pid,
 		env:     env,
@@ -96,6 +99,7 @@ func Recover(pid int, env *Environment) ExecTwo {
 		waiter:  process.WaitPID(pid, env.TaskDir).Wait(),
 		signals: process.Signals(pid),
 		cpu:     new(resources.TrackCPU),
+		logger:  l,
 	}
 }
 
@@ -109,6 +113,14 @@ type exe struct {
 	cpu     *resources.TrackCPU
 	waiter  process.WaitCh
 	signals process.Signaler
+
+	// pipe file descriptors opened for the wrapper process (nsenter/unshare);
+	// opened in prepare() and closed once the process exits
+	outfd *os.File
+	errfd *os.File
+
+	// comes from New/Recover
+	logger hclog.Logger
 }
 
 func (e *exe) Start(ctx context.Context) error {
@@ -137,7 +149,20 @@ func (e *exe) Start(ctx context.Context) error {
 	}
 
 	// create sandbox using nsenter, unshare, and our cgroup
-	cmd := e.prepare(ctx, home, fd, uid, gid)
+	cmd, err := e.prepare(ctx, home, fd, uid, gid)
+	if err != nil {
+		return err
+	}
+
+	// prepare() opened the pipe FDs, closing them if we return before the
+	// waiter goroutine is launched, covers any subsequent error before e.waiter is set.
+	defer func() {
+		if e.waiter == nil {
+			_ = e.outfd.Close()
+			_ = e.errfd.Close()
+		}
+	}()
+
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start command: %w", err)
 	}
@@ -152,7 +177,17 @@ func (e *exe) Start(ctx context.Context) error {
 	// attach to the underlying unix process
 	e.pid = cmd.Process.Pid
 	e.signals = process.Signals(cmd.Process.Pid)
-	e.waiter = process.WaitProc(cmd.Process).Wait()
+
+	// close the pipe file descriptors after the process exits
+	inner := process.WaitProc(cmd.Process).Wait()
+	waiter := make(chan *drivers.ExitResult, 1)
+	go func() {
+		result := <-inner
+		_ = e.outfd.Close()
+		_ = e.errfd.Close()
+		waiter <- result
+	}()
+	e.waiter = waiter
 
 	return nil
 }
@@ -361,11 +396,35 @@ func (e *exe) parameters(uid, gid int) []string {
 }
 
 // create an exec.Cmd to run our process tree
-func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.Cmd {
+func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) (*exec.Cmd, error) {
 	params := e.parameters(uid, gid)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
-	cmd.Stdout = nil // nsenter and unshare do not log
-	cmd.Stderr = nil // nsenter and unshare do not log
+
+	// Open the pipes via os.Root so that the open is resolved relative to
+	// the alloc logs directory and cannot be redirected outside it by a
+	// symlink swap attack across tasks or restarted tasks.
+	pipeDir := filepath.Dir(e.env.OutPipe)
+	root, err := os.OpenRoot(pipeDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pipe directory: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	outfd, err := root.OpenFile(filepath.Base(e.env.OutPipe), os.O_WRONLY, 0700)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open stdout pipe: %w", err)
+	}
+	cmd.Stdout = outfd
+	e.outfd = outfd
+
+	errfd, err := root.OpenFile(filepath.Base(e.env.ErrPipe), os.O_WRONLY, 0700)
+	if err != nil {
+		_ = outfd.Close()
+		return nil, fmt.Errorf("failed to open stderr pipe: %w", err)
+	}
+	cmd.Stderr = errfd
+	e.errfd = errfd
+
 	cmd.Env = flatten(e.env.User, home, e.env.Env)
 	cmd.Dir = e.env.TaskDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -373,7 +432,8 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) *exec.
 		CgroupFD:    fd,   // cgroup file descriptor
 		Setpgid:     true, // ignore signals sent to nomad
 	}
-	return cmd
+
+	return cmd, nil
 }
 
 // set resource constraints via cgroups

@@ -1,5 +1,8 @@
 ## UNRELEASED
 
+BUG FIXES:
+
+* Error messages from the `unshare`/`nsenter` shim processes now appear in the allocation logs. [[GH-95](https://github.com/hashicorp/nomad-driver-exec2/pull/95)]
 
 ## 0.1.2 (May 12, 2026)
 

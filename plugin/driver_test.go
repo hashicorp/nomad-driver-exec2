@@ -285,6 +285,18 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`root:x:0:0:root:/root:/bin/bash`),
 		},
+		// stdout and stderr are routed to separate pipes — validates that
+		// cmd.Stdout and cmd.Stderr are wired to OutPipe and ErrPipe respectively
+		{
+			name:           "stdout and stderr routed to correct pipes",
+			user:           "nomad-80000",
+			command:        "sh",
+			unveilDefaults: true,
+			args:           []string{"-c", "echo STDOUT_MARKER; echo STDERR_MARKER >&2"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`STDOUT_MARKER`),
+			stderrRe:       regexp.MustCompile(`STDERR_MARKER`),
+		},
 		// try to execute a non-existent file
 		{
 			name:           "execute non-existent program",
@@ -501,17 +513,20 @@ func checkLogs(t *testing.T, task *drivers.TaskConfig, outRe, errRe *regexp.Rege
 }
 
 // getLogs will wait on the FIFO of the task to be flushed and return the
-// standard out / standard error log content when available
+// standard out / standard error log content when available.
+// It waits until both expected outputs are present to avoid returning before
+// a slow write (e.g. when both stdoutRe and stderrRe are asserted).
 func getLogs(t *testing.T, task *drivers.TaskConfig) (string, string) {
 	outfile := filepath.Join(filepath.Dir(task.StdoutPath), fmt.Sprintf("%s.stdout.0", task.Name))
 	errfile := filepath.Join(filepath.Dir(task.StderrPath), fmt.Sprintf("%s.stderr.0", task.Name))
 
+	var stdout, stderr string
 	for range 20 {
 		outBytes, _ := os.ReadFile(outfile)
-		stdout := string(bytes.TrimSpace(outBytes))
+		stdout = string(bytes.TrimSpace(outBytes))
 
 		errBytes, _ := os.ReadFile(errfile)
-		stderr := string(bytes.TrimSpace(errBytes))
+		stderr = string(bytes.TrimSpace(errBytes))
 
 		if stdout != "" || stderr != "" {
 			return stdout, stderr
@@ -520,7 +535,7 @@ func getLogs(t *testing.T, task *drivers.TaskConfig) (string, string) {
 		time.Sleep(1 * time.Second)
 	}
 
-	t.Fatalf("no content in stdout or stderr logs (%s, %s)", outfile, errfile)
+	t.Fatalf("no content in stdout and stderr logs (%s, %s)", outfile, errfile)
 	return "", ""
 }
 
