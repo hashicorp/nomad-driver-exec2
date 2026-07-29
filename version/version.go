@@ -21,4 +21,3 @@ var (
 	// VersionMetadata is metadata further describing the build type.
 	VersionMetadata = ""
 )
-

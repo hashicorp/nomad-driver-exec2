@@ -154,10 +154,16 @@ func (e *exe) Start(ctx context.Context) error {
 		return err
 	}
 
+	// prepare() opened the pipe FDs, closing them if we return before the
+	// waiter goroutine is launched, covers any subsequent error before e.waiter is set.
+	defer func() {
+		if e.waiter == nil {
+			_ = e.outfd.Close()
+			_ = e.errfd.Close()
+		}
+	}()
+
 	if err = cmd.Start(); err != nil {
-		// prepare() opened the pipe FDs; close them since no waiter will run
-		_ = e.outfd.Close()
-		_ = e.errfd.Close()
 		return fmt.Errorf("failed to start command: %w", err)
 	}
 
