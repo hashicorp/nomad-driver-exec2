@@ -253,6 +253,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		ErrPipe:      errPipe,
 		Env:          config.Env,
 		TaskDir:      config.TaskDir().Dir,
+		WorkDir:      opts.WorkDir,
 		User:         config.User,
 		Cgroup:       cgroup,
 		Net:          netns(config),
@@ -326,6 +327,7 @@ func (p *Plugin) RecoverTask(handle *drivers.TaskHandle) error {
 		User:    handle.Config.User,
 		Cgroup:  cgroup,
 	}
+	// WorkDir is not needed for recovery (task is already running)
 
 	taskLogger := p.logger.With(
 		"alloc_id", taskState.TaskConfig.AllocID,
@@ -526,6 +528,11 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		return nil, fmt.Errorf("failed to decode driver task config: %w", err)
 	}
 
+	// work_dir must be an absolute path when set
+	if taskConfig.WorkDir != "" && !filepath.IsAbs(taskConfig.WorkDir) {
+		return nil, fmt.Errorf("work_dir must be an absolute path: %q", taskConfig.WorkDir)
+	}
+
 	// combine paths to unveil from plugin config, task config (if enabled),
 	// and some task/alloc directory default paths
 	unveil := slices.Clone(p.config.UnveilPaths)
@@ -539,6 +546,13 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_SECRETS_DIR"])
 		parent := filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+filepath.Join(parent, "tmp"))
+	}
+
+	// if work_dir is set, it must be accessible under Landlock — the task
+	// cannot chdir into a veiled directory. Auto-unveil it with rwxc so the
+	// task can read, write, execute, and create files there.
+	if taskConfig.WorkDir != "" {
+		unveil = append(unveil, "rwxc:"+taskConfig.WorkDir)
 	}
 
 	if len(taskConfig.Unveil) > 0 {
@@ -556,5 +570,6 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		UnveilPaths:    unveil,
 		UnveilDefaults: p.config.UnveilDefaults,
 		OOMScoreAdj:    taskConfig.OOMScoreAdj,
+		WorkDir:        taskConfig.WorkDir,
 	}, nil
 }

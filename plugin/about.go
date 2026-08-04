@@ -60,6 +60,7 @@ var taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 	"args":          hclspec.NewAttr("args", "list(string)", false),
 	"unveil":        hclspec.NewAttr("unveil", "list(string)", false),
 	"oom_score_adj": hclspec.NewAttr("oom_score_adj", "number", false),
+	"work_dir":      hclspec.NewAttr("work_dir", "string", false),
 })
 
 var capabilities = &drivers.Capabilities{
@@ -91,4 +92,5 @@ type TaskConfig struct {
 	Args        []string `codec:"args"`
 	Unveil      []string `codec:"unveil"`
 	OOMScoreAdj int      `codec:"oom_score_adj"`
+	WorkDir     string   `codec:"work_dir"`
 }

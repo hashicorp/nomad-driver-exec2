@@ -153,6 +153,7 @@ func TestFunctional_cases(t *testing.T) {
 		command string
 		args    []string
 		unveil  []string
+		workDir string
 
 		// plugin config
 		unveilDefaults bool
@@ -439,6 +440,15 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`\w+/tmp/tmp\.\w+`),
 		},
+		// cwd is the task directory (not in a veiled parent path)
+		{
+			name:           "cwd is task dir",
+			user:           "nomad-83000",
+			command:        "sh",
+			args:           []string{"-c", `test "$(pwd)" = "$NOMAD_TASK_DIR"`},
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
 	}
 
 	for _, tc := range cases {
@@ -453,6 +463,7 @@ func TestFunctional_cases(t *testing.T) {
 				Command: tc.command,
 				Args:    tc.args,
 				Unveil:  tc.unveil,
+				WorkDir: tc.workDir,
 			}
 
 			allocID := uuid.Generate()
@@ -497,6 +508,95 @@ func TestFunctional_cases(t *testing.T) {
 			checkLogs(t, task, tc.stdoutRe, tc.stderrRe)
 		})
 	}
+}
+
+// TestFunctional_WorkDir verifies that setting work_dir in task config changes
+// the working directory of the task process to the specified path.
+func TestFunctional_WorkDir(t *testing.T) {
+	ctests.RequireRoot(t)
+
+	ci.Parallel(t)
+
+	pluginConfig := &Config{
+		UnveilDefaults: true,
+	}
+
+	allocID := uuid.Generate()
+	taskName := "work_dir_test_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "nomad-84000",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+
+	harness := newTestHarness(t, pluginConfig)
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	cleanup := harness.MkAllocDir(task, true)
+	defer cleanup()
+
+	// use the alloc dir as a custom working directory (always unveiled by default)
+	allocDir := task.Env["NOMAD_ALLOC_DIR"]
+
+	taskConfig := &TaskConfig{
+		Command: "sh",
+		Args:    []string{"-c", `test "$(pwd)" = "$NOMAD_ALLOC_DIR"`},
+		WorkDir: allocDir,
+	}
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	_, _, err := harness.StartTask(task)
+	must.NoError(t, err)
+	defer func() { _ = harness.DestroyTask(task.ID, true) }()
+
+	waitCh, err := harness.WaitTask(context.Background(), task.ID)
+	must.NoError(t, err)
+
+	select {
+	case result := <-waitCh:
+		must.Eq(t, &drivers.ExitResult{ExitCode: 0}, result, debugExitResult(result))
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timeout")
+	}
+}
+
+// TestFunctional_WorkDir_RelativePathRejected verifies that a relative work_dir
+// is rejected at task start time with a clear error.
+func TestFunctional_WorkDir_RelativePathRejected(t *testing.T) {
+	ctests.RequireRoot(t)
+
+	ci.Parallel(t)
+
+	pluginConfig := &Config{
+		UnveilDefaults: true,
+	}
+
+	allocID := uuid.Generate()
+	taskName := "work_dir_rel_test_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "nomad-84000",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+
+	taskConfig := &TaskConfig{
+		Command: "pwd",
+		WorkDir: "relative/path",
+	}
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	harness := newTestHarness(t, pluginConfig)
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	cleanup := harness.MkAllocDir(task, true)
+	defer cleanup()
+
+	_, _, err := harness.StartTask(task)
+	must.ErrorContains(t, err, "work_dir must be an absolute path")
 }
 
 func checkLogs(t *testing.T, task *drivers.TaskConfig, outRe, errRe *regexp.Regexp) {
