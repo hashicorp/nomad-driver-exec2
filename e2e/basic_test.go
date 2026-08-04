@@ -291,6 +291,7 @@ func TestBasic_ProcessNamespace(t *testing.T) {
 	defer purge(t, ctx, "ps")()
 
 	_ = run(t, ctx, "nomad", "job", "run", "./jobs/ps.hcl")
+	wait(t, ctx, "ps")
 
 	logs := logs2(t, ctx, "ps", "ps")
 	lines := strings.Split(logs, "\n") // header + shim + ps
