@@ -1,5 +1,13 @@
 ## UNRELEASED
 
+BREAKING CHANGES:
+
+* Task working directory is now explicitly set to `$NOMAD_TASK_DIR`. Jobs using relative args (e.g. `args = ["local/run.sh"]`) must switch to absolute paths (e.g. `command = "${NOMAD_TASK_DIR}/run.sh"`). [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
+
+IMPROVEMENTS:
+
+* Added optional `work_dir` task config field (absolute path) to override the default CWD. [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
+
 BUG FIXES:
 
 * Error messages from the `unshare`/`nsenter` shim processes now appear in the allocation logs. [[GH-95](https://github.com/hashicorp/nomad-driver-exec2/pull/95)]
