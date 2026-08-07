@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -228,6 +229,22 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	// get our assigned cpuset cores
 	cpuset := config.Resources.LinuxResources.CpusetCpus
 	p.logger.Trace("resources", "memory", memory, "memory_max", memoryMax, "compute", bandwidth, "cpuset", cpuset)
+
+	// compute and inject GOMAXPROCS so Go workloads see the correct parallelism
+	// limit rather than defaulting to the total host CPU count. The Go runtime
+	// cannot reliably auto-detect this inside an exec2 task because Landlock
+	// restricts access to /sys/fs/cgroup and /sys/devices/system/cpu by default.
+	//
+	// bandwidth is the cgroup cpu.max quota in microseconds per 100_000 µs period.
+	// Ceiling integer division by the period gives the whole-core equivalent:
+	//   cores=N tasks:   bandwidth = N × 100_000 → result = N (exact)
+	//   cpu=M MHz tasks: bandwidth = M×100_000/per_core_MHz → result = ceil(fraction)
+	//
+	// Only inject if the operator has not already set it explicitly.
+	if _, alreadySet := config.Env["GOMAXPROCS"]; !alreadySet {
+		gomaxprocs := max(1, int((bandwidth+99_999)/100_000))
+		config.Env["GOMAXPROCS"] = strconv.Itoa(gomaxprocs)
+	}
 
 	// with cgroups v2 this is just the task cgroup
 	cgroup := config.Resources.LinuxResources.CpusetCgroupPath
