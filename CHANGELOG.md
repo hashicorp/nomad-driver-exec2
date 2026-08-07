@@ -2,6 +2,7 @@
 
 BUG FIXES:
 
+* Fixed `GOMAXPROCS` to prevent Go workloads from being over-threaded against the host CPU capacity. [[GH-98](https://github.com/hashicorp/nomad-driver-exec2/pull/98)]
 * Error messages from the `unshare`/`nsenter` shim processes now appear in the allocation logs. [[GH-95](https://github.com/hashicorp/nomad-driver-exec2/pull/95)]
 
 ## 0.1.2 (May 12, 2026)
