@@ -231,9 +231,13 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	p.logger.Trace("resources", "memory", memory, "memory_max", memoryMax, "compute", bandwidth, "cpuset", cpuset)
 
 	// compute and inject GOMAXPROCS so Go workloads see the correct parallelism
-	// limit rather than defaulting to the total host CPU count. The Go runtime
-	// cannot reliably auto-detect this inside an exec2 task because Landlock
-	// restricts access to /sys/fs/cgroup and /sys/devices/system/cpu by default.
+	// limit rather than defaulting to the total host CPU count.
+	//
+	// Go 1.25+ can read cpu.max from the task's own cgroup scope (now always
+	// unveiled read-only via setOptions) and auto-detect correctly. However Go
+	// 1.24 and below never read cgroup at all — they fall back to
+	// sched_getaffinity() which returns all host cores for cpu=N MHz tasks.
+	// The env var injection covers all Go versions uniformly.
 	//
 	// bandwidth is the cgroup cpu.max quota in microseconds per 100_000 µs period.
 	// Ceiling integer division by the period gives the whole-core equivalent:
@@ -550,6 +554,8 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	// if the plugin config.unveil_defaults value is set to true (very common)
 	// then automatically unveil the sandbox directories
 	if p.config.UnveilDefaults {
+		// Expose the task's cgroup read-only so runtimes can read resource limits.
+		unveil = append(unveil, "r:"+driverTaskConfig.Resources.LinuxResources.CpusetCgroupPath)
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_ALLOC_DIR"])
 		unveil = append(unveil, "rx:"+driverTaskConfig.Env["NOMAD_ALLOC_DIR"]+"/logs")
