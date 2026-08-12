@@ -456,16 +456,15 @@ func TestFunctional_cases(t *testing.T) {
 			}
 
 			allocID := uuid.Generate()
-				taskName := "test_cases_" + uuid.Short()
-	
-				task := &drivers.TaskConfig{
-					User:      tc.user,
-					ID:        uuid.Generate(),
-					Name:      taskName,
-					AllocID:   allocID,
-					Env:       map[string]string{},
-					Resources: basicResources(allocID, taskName),
-				}
+			taskName := "test_cases_" + uuid.Short()
+
+			task := &drivers.TaskConfig{
+				User:      tc.user,
+				ID:        uuid.Generate(),
+				Name:      taskName,
+				AllocID:   allocID,
+				Resources: basicResources(allocID, taskName),
+			}
 
 			must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
 
