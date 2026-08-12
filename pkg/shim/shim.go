@@ -364,12 +364,14 @@ func (e *exe) parameters(uid, gid int) []string {
 		)
 	}
 
-	// setup unshare for ipc, pid namespaces
+	// setup unshare for ipc, pid namespaces, and mount propagation
 	result = append(result,
 		"unshare",
 		"--ipc",
 		"--pid",
 		"--mount-proc",
+		"--propagation",
+		"slave",
 		"--fork",
 		"--kill-child=SIGKILL",
 		fmt.Sprintf("--setuid=%d", uid),

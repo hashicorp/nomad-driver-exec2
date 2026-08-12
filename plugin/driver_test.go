@@ -430,6 +430,19 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`root\s+1.+ps aux`), // out ps is pid 1
 		},
+		// mount namespace has slave propagation — host mounts propagate into
+		// the task not vice versa.
+		// The kernel records slave propagation as "master:N" in mountinfo.
+		{
+			name:           "mount propagation slave",
+			user:           "root",
+			command:        "awk",
+			args:           []string{"NR==1", "/proc/self/mountinfo"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`master:\d+`),
+		},
 		// able to use TMPDIR
 		{
 			name:           "use TMPDIR",
