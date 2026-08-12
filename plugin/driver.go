@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -229,26 +228,6 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 	// get our assigned cpuset cores
 	cpuset := config.Resources.LinuxResources.CpusetCpus
 	p.logger.Trace("resources", "memory", memory, "memory_max", memoryMax, "compute", bandwidth, "cpuset", cpuset)
-
-	// compute and inject GOMAXPROCS so Go workloads see the correct parallelism
-	// limit rather than defaulting to the total host CPU count.
-	//
-	// Go 1.25+ can read cpu.max from the task's own cgroup scope (now always
-	// unveiled read-only via setOptions) and auto-detect correctly. However Go
-	// 1.24 and below never read cgroup at all — they fall back to
-	// sched_getaffinity() which returns all host cores for cpu=N MHz tasks.
-	// The env var injection covers all Go versions uniformly.
-	//
-	// bandwidth is the cgroup cpu.max quota in microseconds per 100_000 µs period.
-	// Ceiling integer division by the period gives the whole-core equivalent:
-	//   cores=N tasks:   bandwidth = N × 100_000 → result = N (exact)
-	//   cpu=M MHz tasks: bandwidth = M×100_000/per_core_MHz → result = ceil(fraction)
-	//
-	// Only inject if the operator has not already set it explicitly.
-	if _, alreadySet := config.Env["GOMAXPROCS"]; !alreadySet {
-		gomaxprocs := max(1, int((bandwidth+99_999)/100_000))
-		config.Env["GOMAXPROCS"] = strconv.Itoa(gomaxprocs)
-	}
 
 	// with cgroups v2 this is just the task cgroup
 	cgroup := config.Resources.LinuxResources.CpusetCgroupPath

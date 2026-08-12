@@ -152,7 +152,6 @@ func TestFunctional_cases(t *testing.T) {
 		user    string
 		command string
 		args    []string
-		env     map[string]string
 		unveil  []string
 
 		// plugin config
@@ -440,28 +439,6 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`\w+/tmp/tmp\.\w+`),
 		},
-		// GOMAXPROCS is injected from CPU bandwidth allocation so Go workloads
-		// see the correct parallelism limit rather than the host CPU count.
-		{
-			name:           "GOMAXPROCS injected from bandwidth",
-			user:           "root",
-			command:        "printenv",
-			args:           []string{"GOMAXPROCS"},
-			unveilDefaults: true,
-			exp:            &drivers.ExitResult{ExitCode: 0},
-			stdoutRe:       regexp.MustCompile(`^1$`),
-		},
-		// Operator-supplied GOMAXPROCS must not be overwritten by the driver.
-		{
-			name:           "GOMAXPROCS operator override preserved",
-			user:           "root",
-			command:        "printenv",
-			args:           []string{"GOMAXPROCS"},
-			env:            map[string]string{"GOMAXPROCS": "8"},
-			unveilDefaults: true,
-			exp:            &drivers.ExitResult{ExitCode: 0},
-			stdoutRe:       regexp.MustCompile(`^8$`),
-		},
 	}
 
 	for _, tc := range cases {
@@ -479,20 +456,16 @@ func TestFunctional_cases(t *testing.T) {
 			}
 
 			allocID := uuid.Generate()
-			taskName := "test_cases_" + uuid.Short()
-
-			taskEnv := tc.env
-			if taskEnv == nil {
-				taskEnv = map[string]string{}
-			}
-			task := &drivers.TaskConfig{
-				User:      tc.user,
-				ID:        uuid.Generate(),
-				Name:      taskName,
-				AllocID:   allocID,
-				Env:       taskEnv,
-				Resources: basicResources(allocID, taskName),
-			}
+				taskName := "test_cases_" + uuid.Short()
+	
+				task := &drivers.TaskConfig{
+					User:      tc.user,
+					ID:        uuid.Generate(),
+					Name:      taskName,
+					AllocID:   allocID,
+					Env:       map[string]string{},
+					Resources: basicResources(allocID, taskName),
+				}
 
 			must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
 
