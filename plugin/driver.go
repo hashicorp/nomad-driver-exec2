@@ -528,9 +528,13 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		return nil, fmt.Errorf("failed to decode driver task config: %w", err)
 	}
 
-	// work_dir must be an absolute path when set
+	// if work_dir is set, resolve a relative path against the parent of
+	// NOMAD_TASK_DIR (the task working directory: <alloc>/<task-name>/) so
+	// that job authors can write portable relative paths like "local/subdir"
+	// without needing to know the runtime absolute allocation path.
 	if taskConfig.WorkDir != "" && !filepath.IsAbs(taskConfig.WorkDir) {
-		return nil, fmt.Errorf("work_dir must be an absolute path: %q", taskConfig.WorkDir)
+		taskParent := filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"])
+		taskConfig.WorkDir = filepath.Join(taskParent, taskConfig.WorkDir)
 	}
 
 	// combine paths to unveil from plugin config, task config (if enabled),
@@ -551,7 +555,12 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	// if work_dir is set, it must be accessible under Landlock — the task
 	// cannot chdir into a veiled directory. Auto-unveil it with rwxc so the
 	// task can read, write, execute, and create files there.
+	// work_dir_by_task must be enabled in the plugin config to allow job
+	// authors to set an arbitrary working directory.
 	if taskConfig.WorkDir != "" {
+		if !p.config.WorkDirByTask {
+			return nil, fmt.Errorf("task set work_dir but driver config does not allow this")
+		}
 		unveil = append(unveil, "rwxc:"+taskConfig.WorkDir)
 	}
 
@@ -573,3 +582,4 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		WorkDir:        taskConfig.WorkDir,
 	}, nil
 }
+
