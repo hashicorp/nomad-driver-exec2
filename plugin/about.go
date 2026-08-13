@@ -51,10 +51,6 @@ var driverConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		hclspec.NewAttr("unveil_by_task", "bool", false),
 		hclspec.NewLiteral("false"),
 	),
-	"work_dir_by_task": hclspec.NewDefault(
-		hclspec.NewAttr("work_dir_by_task", "bool", false),
-		hclspec.NewLiteral("false"),
-	),
 	"unveil_paths": hclspec.NewAttr("unveil_paths", "list(string)", false),
 })
 
@@ -84,10 +80,9 @@ var capabilities = &drivers.Capabilities{
 // Config represents the exec2 driver plugin configuration that gets set in
 // the Nomad client configuration file.
 type Config struct {
-	UnveilDefaults  bool     `codec:"unveil_defaults"`
-	UnveilPaths     []string `codec:"unveil_paths"`
-	UnveilByTask    bool     `codec:"unveil_by_task"`
-	WorkDirByTask   bool     `codec:"work_dir_by_task"`
+	UnveilDefaults bool     `codec:"unveil_defaults"`
+	UnveilPaths    []string `codec:"unveil_paths"`
+	UnveilByTask   bool     `codec:"unveil_by_task"`
 }
 
 // TaskConfig represents the exec2 driver task configuration that gets set in

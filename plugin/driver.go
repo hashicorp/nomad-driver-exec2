@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -553,15 +554,23 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	}
 
 	// if work_dir is set, it must be accessible under Landlock — the task
-	// cannot chdir into a veiled directory. Auto-unveil it with rwxc so the
-	// task can read, write, execute, and create files there.
-	// work_dir_by_task must be enabled in the plugin config to allow job
-	// authors to set an arbitrary working directory.
+	// cannot chdir into a veiled directory.
+	//
+	// work_dir that resolves inside the alloc directory is already unveiled by
+	// the defaults block above — no gate is needed and no extra unveil entry
+	// is required. work_dir outside the alloc directory expands the filesystem
+	// surface, so it uses the same unveil_by_task gate as task-specified
+	// unveil paths.
 	if taskConfig.WorkDir != "" {
-		if !p.config.WorkDirByTask {
-			return nil, fmt.Errorf("task set work_dir but driver config does not allow this")
+		// alloc root is the grandparent of NOMAD_TASK_DIR:
+		// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
+		allocRoot := filepath.Dir(filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"]))
+		if !withinDir(allocRoot, taskConfig.WorkDir) {
+			if !p.config.UnveilByTask {
+				return nil, fmt.Errorf("task set work_dir outside sandbox but driver config does not allow this")
+			}
+			unveil = append(unveil, "rwxc:"+taskConfig.WorkDir)
 		}
-		unveil = append(unveil, "rwxc:"+taskConfig.WorkDir)
 	}
 
 	if len(taskConfig.Unveil) > 0 {
@@ -583,3 +592,10 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	}, nil
 }
 
+// withinDir reports whether path is equal to dir or nested inside it.
+// It uses filepath.Rel so separator arithmetic is handled by the standard
+// library — a relative result starting with ".." means path is outside dir.
+func withinDir(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && !strings.HasPrefix(rel, "..")
+}

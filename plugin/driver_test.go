@@ -158,7 +158,6 @@ func TestFunctional_cases(t *testing.T) {
 		// plugin config
 		unveilDefaults bool
 		unveilByTask   bool
-		workDirByTask  bool
 		unveilPaths    []string
 
 		// expectations
@@ -450,38 +449,38 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: true,
 			exp:            &drivers.ExitResult{ExitCode: 0},
 		},
-		// work_dir overrides the default CWD using a relative path;
-		// "alloc" resolves to parent(NOMAD_TASK_DIR)/alloc == NOMAD_ALLOC_DIR
+		// work_dir inside sandbox — works without unveil_by_task because the
+		// alloc dir is already unveiled by defaults
 		{
-			name:           "work_dir overrides cwd",
+			name:           "work_dir overrides cwd to alloc dir",
 			user:           "nomad-84000",
 			command:        "sh",
 			args:           []string{"-c", `test "$(pwd)" = "$NOMAD_ALLOC_DIR"`},
-			workDir:        "alloc",
-			workDirByTask:  true,
+			workDir:        "alloc", // resolves to <alloc>/alloc == NOMAD_ALLOC_DIR
 			unveilDefaults: true,
+			unveilByTask:   false, // no gate needed — inside sandbox
 			exp:            &drivers.ExitResult{ExitCode: 0},
 		},
-		// work_dir set but work_dir_by_task not enabled — must be rejected
-		{
-			name:           "work_dir rejected when work_dir_by_task false",
-			user:           "nomad-85000",
-			command:        "pwd",
-			workDir:        "local",
-			workDirByTask:  false,
-			unveilDefaults: true,
-			exp:            nil, // StartTask itself returns an error; no exit result
-		},
-		// relative work_dir is resolved against parent of NOMAD_TASK_DIR
+		// work_dir inside sandbox — relative path to task dir, no gate needed
 		{
 			name:           "work_dir relative path resolved",
 			user:           "nomad-86000",
 			command:        "sh",
 			args:           []string{"-c", `test "$(pwd)" = "$NOMAD_TASK_DIR"`},
-			workDir:        "local", // resolves to parent(NOMAD_TASK_DIR)/local == NOMAD_TASK_DIR
-			workDirByTask:  true,
+			workDir:        "local", // resolves to <alloc>/<task>/local == NOMAD_TASK_DIR
 			unveilDefaults: true,
+			unveilByTask:   false, // no gate needed — inside sandbox
 			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// work_dir outside sandbox without unveil_by_task — must be rejected
+		{
+			name:           "work_dir outside sandbox rejected without unveil_by_task",
+			user:           "nomad-85000",
+			command:        "pwd",
+			workDir:        "/tmp", // outside alloc dir — needs gate
+			unveilByTask:   false,
+			unveilDefaults: true,
+			exp:            nil, // StartTask itself returns an error; no exit result
 		},
 	}
 
@@ -490,7 +489,6 @@ func TestFunctional_cases(t *testing.T) {
 			pluginConfig := &Config{
 				UnveilDefaults: tc.unveilDefaults,
 				UnveilByTask:   tc.unveilByTask,
-				WorkDirByTask:  tc.workDirByTask,
 				UnveilPaths:    tc.unveilPaths,
 			}
 
