@@ -6,7 +6,7 @@ BREAKING CHANGES:
 
 IMPROVEMENTS:
 
-* Added optional `work_dir` task config field (absolute path) to override the default CWD. [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
+* Added optional `work_dir` task config field to override the default CWD. Accepts an absolute or task-relative path. [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
 
 BUG FIXES:
 
