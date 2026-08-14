@@ -153,6 +153,7 @@ func TestFunctional_cases(t *testing.T) {
 		command string
 		args    []string
 		unveil  []string
+		workDir string // relative or absolute path; empty defaults to NOMAD_TASK_DIR
 
 		// plugin config
 		unveilDefaults bool
@@ -452,6 +453,48 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`\w+/tmp/tmp\.\w+`),
 		},
+		// cwd is the task directory (not in a veiled parent path)
+		{
+			name:           "cwd is task dir",
+			user:           "nomad-83000",
+			command:        "sh",
+			args:           []string{"-c", `test "$(pwd)" = "$NOMAD_TASK_DIR"`},
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// work_dir inside sandbox — works without unveil_by_task because the
+		// alloc dir is already unveiled by defaults
+		{
+			name:           "work_dir overrides cwd to alloc dir",
+			user:           "nomad-84000",
+			command:        "sh",
+			args:           []string{"-c", `test "$(pwd)" = "$NOMAD_ALLOC_DIR"`},
+			workDir:        "alloc", // resolves to <alloc>/alloc == NOMAD_ALLOC_DIR
+			unveilDefaults: true,
+			unveilByTask:   false, // no gate needed — inside sandbox
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// work_dir inside sandbox — relative path to task dir, no gate needed
+		{
+			name:           "work_dir relative path resolved",
+			user:           "nomad-86000",
+			command:        "sh",
+			args:           []string{"-c", `test "$(pwd)" = "$NOMAD_TASK_DIR"`},
+			workDir:        "local", // resolves to <alloc>/<task>/local == NOMAD_TASK_DIR
+			unveilDefaults: true,
+			unveilByTask:   false, // no gate needed — inside sandbox
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// work_dir outside sandbox without unveil_by_task — must be rejected
+		{
+			name:           "work_dir outside sandbox rejected without unveil_by_task",
+			user:           "nomad-85000",
+			command:        "pwd",
+			workDir:        "/tmp", // outside alloc dir — needs gate
+			unveilByTask:   false,
+			unveilDefaults: true,
+			exp:            nil, // StartTask itself returns an error; no exit result
+		},
 	}
 
 	for _, tc := range cases {
@@ -460,12 +503,6 @@ func TestFunctional_cases(t *testing.T) {
 				UnveilDefaults: tc.unveilDefaults,
 				UnveilByTask:   tc.unveilByTask,
 				UnveilPaths:    tc.unveilPaths,
-			}
-
-			taskConfig := &TaskConfig{
-				Command: tc.command,
-				Args:    tc.args,
-				Unveil:  tc.unveil,
 			}
 
 			allocID := uuid.Generate()
@@ -479,15 +516,28 @@ func TestFunctional_cases(t *testing.T) {
 				Resources: basicResources(allocID, taskName),
 			}
 
-			must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
-
 			harness := newTestHarness(t, pluginConfig)
 			harness.MakeTaskCgroup(task.AllocID, task.Name)
 			cleanup := harness.MkAllocDir(task, true)
 			defer cleanup()
 
+			taskConfig := &TaskConfig{
+				Command: tc.command,
+				Args:    tc.args,
+				Unveil:  tc.unveil,
+				WorkDir: tc.workDir,
+			}
+
+			must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
 			// Start the task
 			_, _, err := harness.StartTask(task)
+
+			// cases with exp==nil expect StartTask itself to return an error
+			if tc.exp == nil {
+				must.Error(t, err)
+				return
+			}
 			must.NoError(t, err)
 
 			defer func() { _ = harness.DestroyTask(task.ID, true) }()

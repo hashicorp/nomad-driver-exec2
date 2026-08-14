@@ -41,7 +41,7 @@ public class Test {
 
       config {
         command = "${var.javabin}/javac"
-        args    = ["-d", "${NOMAD_ALLOC_DIR}", "local/Test.java"]
+        args    = ["-d", "${NOMAD_ALLOC_DIR}", "${NOMAD_TASK_DIR}/Test.java"]
         unveil  = ["r:${var.etcjava}"]
       }
 

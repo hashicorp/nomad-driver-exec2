@@ -253,6 +253,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		ErrPipe:      errPipe,
 		Env:          config.Env,
 		TaskDir:      config.TaskDir().Dir,
+		WorkDir:      opts.WorkDir,
 		User:         config.User,
 		Cgroup:       cgroup,
 		Net:          netns(config),
@@ -326,6 +327,7 @@ func (p *Plugin) RecoverTask(handle *drivers.TaskHandle) error {
 		User:    handle.Config.User,
 		Cgroup:  cgroup,
 	}
+	// WorkDir is not needed for recovery (task is already running)
 
 	taskLogger := p.logger.With(
 		"alloc_id", taskState.TaskConfig.AllocID,
@@ -526,6 +528,15 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		return nil, fmt.Errorf("failed to decode driver task config: %w", err)
 	}
 
+	// if work_dir is set, resolve a relative path against the parent of
+	// NOMAD_TASK_DIR (the task working directory: <alloc>/<task-name>/) so
+	// that job authors can write portable relative paths like "local/subdir"
+	// without needing to know the runtime absolute allocation path.
+	if taskConfig.WorkDir != "" && !filepath.IsAbs(taskConfig.WorkDir) {
+		taskParent := filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"])
+		taskConfig.WorkDir = filepath.Join(taskParent, taskConfig.WorkDir)
+	}
+
 	// combine paths to unveil from plugin config, task config (if enabled),
 	// and some task/alloc directory default paths
 	unveil := slices.Clone(p.config.UnveilPaths)
@@ -543,6 +554,29 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		unveil = append(unveil, "rwxc:"+filepath.Join(parent, "tmp"))
 	}
 
+	// if work_dir is set, it must be accessible under Landlock — the task
+	// cannot chdir into a veiled directory.
+	//
+	// work_dir that resolves inside the alloc directory is already unveiled by
+	// the defaults block above — no gate is needed and no extra unveil entry
+	// is required. work_dir outside the alloc directory expands the filesystem
+	// surface, so it uses the same unveil_by_task gate as task-specified
+	// unveil paths.
+	//
+	// childEscapesParentDir uses os.OpenRoot so the kernel enforces the
+	// boundary — symlinks pointing outside the alloc root cannot bypass this.
+	if taskConfig.WorkDir != "" {
+		// alloc root is the grandparent of NOMAD_TASK_DIR:
+		// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
+		allocRoot := filepath.Dir(filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"]))
+		if err := childEscapesParentDir(allocRoot, taskConfig.WorkDir); err != nil {
+			if !p.config.UnveilByTask {
+				return nil, fmt.Errorf("task set work_dir outside sandbox but driver config does not allow this")
+			}
+			unveil = append(unveil, "rwxc:"+taskConfig.WorkDir)
+		}
+	}
+
 	if len(taskConfig.Unveil) > 0 {
 		if !p.config.UnveilByTask {
 			// if task.config.unveil is set, the plugin config must allow it
@@ -558,5 +592,31 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		UnveilPaths:    unveil,
 		UnveilDefaults: p.config.UnveilDefaults,
 		OOMScoreAdj:    taskConfig.OOMScoreAdj,
+		WorkDir:        taskConfig.WorkDir,
 	}, nil
+}
+
+// childEscapesParentDir reports whether child escapes parent by returning a
+// non-nil error. Uses os.OpenRoot so that the kernel enforces the sandbox
+// boundary, a symlink inside parent that points outside it cannot bypass
+// this check. This mirrors the escapingfs.ChildEscapesParentDir helper
+// introduced in Nomad v2.0.5
+func childEscapesParentDir(parent, child string) error {
+	if filepath.IsAbs(child) {
+		var err error
+		child, err = filepath.Rel(parent, child)
+		if err != nil {
+			return err
+		}
+	}
+	root, err := os.OpenRoot(parent)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	_, err = root.Stat(child)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

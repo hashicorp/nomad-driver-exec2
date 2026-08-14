@@ -33,6 +33,7 @@ type Options struct {
 	UnveilPaths    []string
 	UnveilDefaults bool
 	OOMScoreAdj    int
+	WorkDir        string // working directory for the task; defaults to TaskDir
 }
 
 // Environment represents runtime configuration.
@@ -42,6 +43,7 @@ type Environment struct {
 	ErrPipe      string            // io pipe path for stderr
 	Env          map[string]string // environment variables
 	TaskDir      string            // task directory
+	WorkDir      string            // working directory for the task; defaults to TaskDir
 	Cgroup       string            // task cgroup path
 	Net          string            // allocation network namespace path
 	Memory       uint64            // memory in megabytes
@@ -293,7 +295,7 @@ func (e *exe) writeCG(file, content string) error {
 	return f.Close()
 }
 
-func flatten(user, home string, env map[string]string) []string {
+func flatten(user, home, workDir string, env map[string]string) []string {
 	result := make([]string, 0, len(env))
 
 	// override and remove some variables
@@ -313,6 +315,13 @@ func flatten(user, home string, env map[string]string) []string {
 	parent := filepath.Dir(env["NOMAD_TASK_DIR"])
 	tmp := filepath.Join(parent, "tmp")
 	env["TMPDIR"] = tmp
+
+	// set the working directory; defaults to NOMAD_TASK_DIR when not overridden
+	if workDir != "" {
+		env["NOMAD_WORK_DIR"] = workDir
+	} else {
+		env["NOMAD_WORK_DIR"] = env["NOMAD_TASK_DIR"]
+	}
 
 	// copy environment variables into list form
 	for k, v := range env {
@@ -427,8 +436,13 @@ func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) (*exec
 	cmd.Stderr = errfd
 	e.errfd = errfd
 
-	cmd.Env = flatten(e.env.User, home, e.env.Env)
-	cmd.Dir = e.env.TaskDir
+	cmd.Env = flatten(e.env.User, home, e.env.WorkDir, e.env.Env)
+	// use work_dir when set, otherwise fall back to the task directory
+	if e.env.WorkDir != "" {
+		cmd.Dir = e.env.WorkDir
+	} else {
+		cmd.Dir = e.env.TaskDir
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		UseCgroupFD: true, // clone directly into cgroup
 		CgroupFD:    fd,   // cgroup file descriptor
