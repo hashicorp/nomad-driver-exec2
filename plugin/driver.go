@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -561,11 +560,14 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	// is required. work_dir outside the alloc directory expands the filesystem
 	// surface, so it uses the same unveil_by_task gate as task-specified
 	// unveil paths.
+	//
+	// childEscapesParentDir uses os.OpenRoot so the kernel enforces the
+	// boundary — symlinks pointing outside the alloc root cannot bypass this.
 	if taskConfig.WorkDir != "" {
 		// alloc root is the grandparent of NOMAD_TASK_DIR:
 		// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
 		allocRoot := filepath.Dir(filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"]))
-		if !withinDir(allocRoot, taskConfig.WorkDir) {
+		if err := childEscapesParentDir(allocRoot, taskConfig.WorkDir); err != nil {
 			if !p.config.UnveilByTask {
 				return nil, fmt.Errorf("task set work_dir outside sandbox but driver config does not allow this")
 			}
@@ -592,10 +594,27 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	}, nil
 }
 
-// withinDir reports whether path is equal to dir or nested inside it.
-// It uses filepath.Rel so separator arithmetic is handled by the standard
-// library — a relative result starting with ".." means path is outside dir.
-func withinDir(dir, path string) bool {
-	rel, err := filepath.Rel(dir, path)
-	return err == nil && !strings.HasPrefix(rel, "..")
+// childEscapesParentDir reports whether child escapes parent by returning a
+// non-nil error. Uses os.OpenRoot so that the kernel enforces the sandbox
+// boundary, a symlink inside parent that points outside it cannot bypass
+// this check. This mirrors the escapingfs.ChildEscapesParentDir helper
+// introduced in Nomad v2.0.5
+func childEscapesParentDir(parent, child string) error {
+	if filepath.IsAbs(child) {
+		var err error
+		child, err = filepath.Rel(parent, child)
+		if err != nil {
+			return err
+		}
+	}
+	root, err := os.OpenRoot(parent)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	_, err = root.Stat(child)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
