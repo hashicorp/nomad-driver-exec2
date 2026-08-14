@@ -52,6 +52,11 @@ func lockdown(defaults bool, elements []string) error {
 			landlock.Dir("/usr/bin", "rx"),
 			landlock.Dir("/usr/local/bin", "rx"),
 		)
+		// expose /proc read-only so runtimes (Go 1.25+, JVM, dotnet) can read
+		// /proc/self/cgroup and /proc/self/mountinfo to discover their cgroup
+		// CPU and memory limits. unshare --mount-proc creates 
+		// an isolated /proc scoped to the task's PID namespace.
+		paths = append(paths, landlock.Dir("/proc", "r"))
 	}
 
 	return landlock.New(paths...).Lock(landlock.Mandatory)

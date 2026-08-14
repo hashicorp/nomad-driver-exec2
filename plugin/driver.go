@@ -533,6 +533,8 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	// if the plugin config.unveil_defaults value is set to true (very common)
 	// then automatically unveil the sandbox directories
 	if p.config.UnveilDefaults {
+		// Expose the task's cgroup read-only so runtimes can read resource limits.
+		unveil = append(unveil, "r:"+driverTaskConfig.Resources.LinuxResources.CpusetCgroupPath)
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_ALLOC_DIR"])
 		unveil = append(unveil, "rx:"+driverTaskConfig.Env["NOMAD_ALLOC_DIR"]+"/logs")
