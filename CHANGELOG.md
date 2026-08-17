@@ -10,6 +10,7 @@ IMPROVEMENTS:
 
 BUG FIXES:
 
+* Fixed `permission denied` when a task reads files under `/proc` or `/sys` (e.g. `r:/proc/self/mountinfo`) via an explicit `unveil` entry. [[GH-100](https://github.com/hashicorp/nomad-driver-exec2/pull/100)]
 * Fixed mount propagation so host mounts remain visible while task-internal mounts stay isolated from the host. [[GH-99](https://github.com/hashicorp/nomad-driver-exec2/pull/99)]
 * Fixed `GOMAXPROCS` to prevent Go workloads from being over-threaded against the host CPU capacity. [[GH-98](https://github.com/hashicorp/nomad-driver-exec2/pull/98)]
 * Error messages from the `unshare`/`nsenter` shim processes now appear in the allocation logs. [[GH-95](https://github.com/hashicorp/nomad-driver-exec2/pull/95)]
