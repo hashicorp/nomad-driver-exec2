@@ -97,7 +97,7 @@ func init() {
 
 		// invoke the task command with its args
 		// the environment has already been set for us by the exec2 driver;
-		// NOMAD_WORK_DIR is set to work_dir if configured, otherwise NOMAD_TASK_DIR
+		// NOMAD_WORK_DIR is set to work_dir if configured, otherwise NOMAD_TASK_DIR.
 		cmd := exec.Command(cmdpath, commands[1:]...)
 		cmd.Dir = os.Getenv("NOMAD_WORK_DIR")
 		cmd.Stdout = stdout
@@ -106,15 +106,15 @@ func init() {
 		var code = 0
 		if err = cmd.Run(); err != nil {
 			// cmd.Run() can return errors other than *exec.ExitError — for
-			// example *fs.PathError when chdir into cmd.Dir fails because the
-			// working directory is not unveiled or does not exist. A bare type
+			// example *fs.PathError when chdir into cmd.Dir fails because an
+			// explicit work_dir is not unveiled or does not exist. A bare type
 			// assertion panics in that case; use errors.As instead.
 			var ee *exec.ExitError
 			if errors.As(err, &ee) {
 				code = ee.ExitCode()
 			} else {
 				debug("task command failed: %v", err)
-				code = 1
+				code = subproc.ExitFailure
 			}
 		}
 

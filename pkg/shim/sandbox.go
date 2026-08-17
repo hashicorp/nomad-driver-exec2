@@ -95,18 +95,22 @@ func convert(elements []string) ([]*landlock.Path, error) {
 		mode := path[0:idx]
 		filepath := path[idx+1:]
 
-		// Virtual filesystems (/proc, /sys) have namespace-scoped inodes.
-		// os.Stat would resolve /proc/self to the shim's PID inode, which
-		// does not exist in the task's private namespace after unshare --mount-proc.
-		// Skip stat entirely and register the path as a directory.
-		if virtualFSRoot(filepath) != "" {
-			paths = append(paths, landlock.Dir(filepath, mode))
-			continue
-		}
-
 		info, err := os.Stat(filepath)
+
+		// Virtual filesystems (/proc, /sys) have namespace-scoped inodes.
+		// /proc/self is a magic symlink that resolves to /proc/<shim-pid>;
+		// that inode does not survive unshare --mount-proc into the task's
+		// private namespace. We ignore stat errors for these paths and fall
+		// back to File, which is correct for any leaf entry under /proc or
+		// /sys (e.g. /proc/self/mountinfo). Paths that stat successfully
+		// (e.g. "/proc", "/sys", "/proc/cpuinfo") take the normal dir/file
+		// branch below.
 		if err != nil {
-			return nil, fmt.Errorf("failed to stat unveil path: %w", err)
+			if virtualFSRoot(filepath) == "" {
+				return nil, fmt.Errorf("failed to stat unveil path: %w", err)
+			}
+			paths = append(paths, landlock.File(filepath, mode))
+			continue
 		}
 
 		if info.IsDir() {

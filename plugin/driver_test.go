@@ -324,21 +324,21 @@ func TestFunctional_cases(t *testing.T) {
 			user:           "nomad-80000",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "run 'env' as nobody without default paths",
 			user:           "nobody",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "run 'env' as root without default paths",
 			user:           "root",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		// write to task directory
 		{
@@ -376,7 +376,7 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: false,
 			unveilPaths:    []string{"r:/etc/hosts"},
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_TASK_DIR}"},
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "write to alloc directory no defaults",
@@ -385,7 +385,7 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: false,
 			unveilPaths:    []string{"r:/etc/hosts"},
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_ALLOC_DIR}"},
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "write to secrets directory no defaults",
@@ -394,7 +394,7 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: false,
 			unveilPaths:    []string{"r:/etc/hosts"},
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_SECRETS_DIR}"},
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		// dyanmic id
 		{
@@ -484,6 +484,62 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: true,
 			unveilByTask:   false, // no gate needed — inside sandbox
 			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// /proc/self/mountinfo via explicit task unveil — the reported bug.
+		// Before fix: convert() called os.Stat("/proc/self/mountinfo") which
+		// followed the /proc/self symlink to the shim PID inode; after
+		// unshare --mount-proc the task's private /proc had different inodes,
+		// so Landlock returned EPERM. After fix: stat fails → virtualFSRoot
+		// fires → File rule registered by path string, survives namespace change.
+		{
+			name:           "read /proc/self/mountinfo via task unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/self/mountinfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc/self/mountinfo"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`\d+ \d+ \d+:\d+`), // mountinfo line format
+		},
+		// /proc/cpuinfo via explicit task unveil.
+		// Before fix: convert() emitted Dir("/proc/cpuinfo","r") — Landlock
+		// rejects Dir on a file inode with EINVAL. After fix: stat succeeds,
+		// IsDir=false → File("/proc/cpuinfo","r") — correct.
+		{
+			name:           "read /proc/cpuinfo via task unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/cpuinfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc/cpuinfo"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`.+`),
+		},
+		// Multiple specific /proc paths together — mirrors the exact DSE jobspec.
+		{
+			name:           "read multiple /proc paths via task unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/self/mountinfo && head -1 /proc/cpuinfo && head -1 /proc/meminfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc/self/mountinfo", "r:/proc/cpuinfo", "r:/proc/meminfo"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// /proc root via task unveil — directory form. os.Stat("/proc") succeeds
+		// and IsDir=true so Dir("/proc","r") is emitted; all sub-paths accessible.
+		{
+			name:           "read /proc/self/mountinfo via /proc root unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/self/mountinfo && head -1 /proc/cpuinfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`\d+ \d+ \d+:\d+`),
 		},
 		// work_dir outside sandbox without unveil_by_task — must be rejected
 		{
