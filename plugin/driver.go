@@ -11,9 +11,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	set "github.com/hashicorp/go-set/v2"
+	caps "github.com/hashicorp/nomad-driver-exec2/pkg/capabilities"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/resources"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/shim"
 	"github.com/hashicorp/nomad-driver-exec2/pkg/task"
@@ -92,11 +95,16 @@ func (p *Plugin) SetConfig(c *base.Config) error {
 	p.compute = c.AgentConfig.Compute()
 	resources.SetSpecs(p.compute)
 
+	// validate that every capability name in allow_caps is a known Linux capability
+	for _, cap := range config.AllowCaps {
+		if _, err := caps.ParseCap(cap); err != nil {
+			return fmt.Errorf("invalid capability %q in allow_caps: %w", cap, err)
+		}
+	}
+
 	// Set the decoded config object
 	p.config = &config
 
-	// currently not much to validate on the plugin config, but if there was
-	// that step would go here
 	return nil
 }
 
@@ -174,6 +182,7 @@ func (p *Plugin) doFingerprint(find lookupFunc) *drivers.Fingerprint {
 		Attributes: map[string]*structs.Attribute{
 			"driver.exec2.unveil.tasks":    structs.NewBoolAttribute(p.config.UnveilByTask),
 			"driver.exec2.unveil.defaults": structs.NewBoolAttribute(p.config.UnveilDefaults),
+			"driver.exec2.caps.allowlist":  structs.NewStringAttribute(strings.Join(p.config.AllowCaps, ",")),
 		},
 	}
 }
@@ -272,6 +281,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		"unveil_paths", opts.UnveilPaths,
 		"unveil_defaults", opts.UnveilDefaults,
 		"oom_score_adj", opts.OOMScoreAdj,
+		"capabilities", opts.Capabilities,
 	)
 
 	// create the runner and start it
@@ -586,12 +596,32 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		unveil = append(unveil, taskConfig.Unveil...)
 	}
 
+	// Compute the effective capability set:
+	//   1. start with cap_add (normalized)
+	//   2. remove anything in cap_drop (normalized)
+	//   3. every remaining cap must be present in the operator allow_caps list
+	//
+	// Cap names are normalized throughout so "NET_BIND_SERVICE",
+	// "cap_net_bind_service", and "net_bind_service" all compare equal.
+	effectiveCaps := set.FromFunc(taskConfig.CapAdd, caps.NormalizeCap)
+	effectiveCaps.RemoveSlice(set.FromFunc(taskConfig.CapDrop, caps.NormalizeCap).Slice())
+
+	if effectiveCaps.Size() > 0 {
+		allowed := set.FromFunc(p.config.AllowCaps, caps.NormalizeCap)
+		for _, c := range effectiveCaps.Slice() {
+			if !allowed.Contains(c) {
+				return nil, fmt.Errorf("task requested capability %q not in driver allow_caps", c)
+			}
+		}
+	}
+
 	return &shim.Options{
 		Command:        taskConfig.Command,
 		Arguments:      taskConfig.Args,
 		UnveilPaths:    unveil,
 		UnveilDefaults: p.config.UnveilDefaults,
 		OOMScoreAdj:    taskConfig.OOMScoreAdj,
+		Capabilities:   effectiveCaps.Slice(),
 		WorkDir:        taskConfig.WorkDir,
 	}, nil
 }

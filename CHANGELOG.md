@@ -1,5 +1,9 @@
 ## UNRELEASED
 
+FEATURES:
+
+* Added `allow_caps` (plugin config), `cap_add` and `cap_drop` (task config) to support Linux ambient capabilities for tasks. [[GH-96](https://github.com/hashicorp/nomad-driver-exec2/pull/96)]
+
 BREAKING CHANGES:
 
 * Task working directory is now explicitly set to `$NOMAD_TASK_DIR`. Jobs using relative args (e.g. `args = ["local/run.sh"]`) must switch to absolute paths (e.g. `command = "${NOMAD_TASK_DIR}/run.sh"`). [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
