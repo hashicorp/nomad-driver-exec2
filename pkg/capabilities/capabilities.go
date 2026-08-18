@@ -12,10 +12,7 @@ import (
 )
 
 // capNames maps normalized capability names (lowercase, no "cap_" prefix) to
-// their kernel integer values. Built at init time from the moby/sys/capability
-// library's authoritative list — automatically covering every capability the
-// library knows about, with no manual maintenance required.
-//
+// their kernel integer values.
 // On Linux, ListSupported queries the running kernel for the actual supported
 // set. On other platforms, ListKnown returns the static compiled-in list
 // (used when cross-compiling or running tests on non-Linux).
