@@ -97,7 +97,7 @@ func init() {
 
 		// invoke the task command with its args
 		// the environment has already been set for us by the exec2 driver;
-		// NOMAD_WORK_DIR is set to work_dir if configured, otherwise NOMAD_TASK_DIR.
+		// NOMAD_WORK_DIR is set to work_dir if configured, otherwise NOMAD_TASK_DIR
 		cmd := exec.Command(cmdpath, commands[1:]...)
 		cmd.Dir = os.Getenv("NOMAD_WORK_DIR")
 		cmd.Stdout = stdout
