@@ -11,25 +11,9 @@ import (
 	"github.com/shoenig/go-landlock"
 )
 
-// virtualFS lists filesystem roots that are virtual (kernel-generated).
-// Their inodes are namespace-scoped: os.Stat on a path like /proc/self/mountinfo
-// follows the /proc/self symlink to the shim's own PID inode, which does not
-// exist in the task's private namespace after unshare --mount-proc.
-// All paths under these roots must be treated as directories without stat(2).
-var virtualFS = []string{
-	"/proc",
-	"/sys",
-}
-
-// virtualFSRoot returns the virtual filesystem root that contains path,
-// or "" if path is not under any known virtual filesystem.
-func virtualFSRoot(path string) string {
-	for _, root := range virtualFS {
-		if path == root || strings.HasPrefix(path, root+"/") {
-			return root
-		}
-	}
-	return ""
+// isProcPath reports whether path is /proc or a descendant of /proc.
+func isProcPath(path string) bool {
+	return path == "/proc" || strings.HasPrefix(path, "/proc/")
 }
 
 // When the nomad binary is invoked as exec2-shim, the format is
@@ -97,20 +81,16 @@ func convert(elements []string) ([]*landlock.Path, error) {
 
 		info, err := os.Stat(filepath)
 
-		// Virtual filesystems (/proc, /sys) have namespace-scoped inodes.
-		// /proc/self is a magic symlink that resolves to /proc/<shim-pid>;
-		// that inode does not survive unshare --mount-proc into the task's
-		// private namespace. We ignore stat errors for these paths and fall
-		// back to File, which is correct for any leaf entry under /proc or
-		// /sys (e.g. /proc/self/mountinfo). Paths that stat successfully
-		// (e.g. "/proc", "/sys", "/proc/cpuinfo") take the normal dir/file
-		// branch below.
+		// /proc/self/* paths fail to stat in the shim: /proc/self is a magic
+		// symlink resolved to /proc/<shim-pid>, which does not exist after
+		// unshare --mount-proc. Register by path string so the kernel
+		// re-resolves it inside the task's private mount namespace.
 		if err != nil {
-			if virtualFSRoot(filepath) == "" {
-				return nil, fmt.Errorf("failed to stat unveil path: %w", err)
+			if isProcPath(filepath) {
+				paths = append(paths, landlock.File(filepath, mode))
+				continue
 			}
-			paths = append(paths, landlock.File(filepath, mode))
-			continue
+			return nil, fmt.Errorf("failed to stat unveil path: %w", err)
 		}
 
 		if info.IsDir() {
