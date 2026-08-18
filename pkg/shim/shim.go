@@ -33,6 +33,7 @@ type Options struct {
 	UnveilPaths    []string
 	UnveilDefaults bool
 	OOMScoreAdj    int
+	Capabilities   []string
 	WorkDir        string // working directory for the task; defaults to TaskDir
 }
 
@@ -373,7 +374,8 @@ func (e *exe) parameters(uid, gid int) []string {
 		)
 	}
 
-	// setup unshare for ipc, pid namespaces, and mount propagation
+	// setup unshare for ipc, pid namespaces, mount propagation; uid/gid transition is handled
+	// by the shim itself (after the fork) so it can manage capabilities correctly
 	result = append(result,
 		"unshare",
 		"--ipc",
@@ -383,8 +385,6 @@ func (e *exe) parameters(uid, gid int) []string {
 		"slave",
 		"--fork",
 		"--kill-child=SIGKILL",
-		fmt.Sprintf("--setuid=%d", uid),
-		fmt.Sprintf("--setgid=%d", gid),
 		"--",
 	)
 
@@ -393,6 +393,12 @@ func (e *exe) parameters(uid, gid int) []string {
 	result = append(result, strconv.FormatBool(e.opts.UnveilDefaults))
 	result = append(result, e.env.OutPipe)
 	result = append(result, e.env.ErrPipe)
+	// pass uid and gid so the shim can drop privileges itself (after fork,
+	// before exec) with PR_SET_KEEPCAPS to preserve the ambient capability set
+	result = append(result, strconv.Itoa(uid))
+	result = append(result, strconv.Itoa(gid))
+	// pass capability names as a comma-separated string; empty means no caps
+	result = append(result, strings.Join(e.opts.Capabilities, ","))
 	result = append(result, e.opts.UnveilPaths...)
 	result = append(result, "--")
 
