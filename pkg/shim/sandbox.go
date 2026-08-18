@@ -11,9 +11,9 @@ import (
 	"github.com/shoenig/go-landlock"
 )
 
-// isProcPath reports whether path is /proc or a descendant of /proc.
-func isProcPath(path string) bool {
-	return path == "/proc" || strings.HasPrefix(path, "/proc/")
+// isProcSelfPath reports whether path is a descendant of /proc/self or /proc/thread-self 
+func isProcSelfPath(path string) bool {
+	return strings.HasPrefix(path, "/proc/self/") || strings.HasPrefix(path, "/proc/thread-self/")
 }
 
 // When the nomad binary is invoked as exec2-shim, the format is
@@ -79,17 +79,20 @@ func convert(elements []string) ([]*landlock.Path, error) {
 		mode := path[0:idx]
 		filepath := path[idx+1:]
 
-		info, err := os.Stat(filepath)
+		// /proc/self/* and /proc/thread-self/* contain PID-scoped magic symlinks.
+		// go-landlock registers rules via O_PATH which pins the inode at the
+		// time of the open — resolving /proc/self to /proc/<shim-pid>. After
+		// unshare --mount-proc the task's private /proc has different inodes,
+		// making the pinned inode unreachable (EPERM). Promote these paths to
+		// Dir("/proc", mode) so the rule covers the whole /proc tree by its
+		// stable directory inode instead.
+		if isProcSelfPath(filepath) {
+			paths = append(paths, landlock.Dir("/proc", mode))
+			continue
+		}
 
-		// /proc/self/* paths fail to stat in the shim: /proc/self is a magic
-		// symlink resolved to /proc/<shim-pid>, which does not exist after
-		// unshare --mount-proc. Register by path string so the kernel
-		// re-resolves it inside the task's private mount namespace.
+		info, err := os.Stat(filepath)
 		if err != nil {
-			if isProcPath(filepath) {
-				paths = append(paths, landlock.File(filepath, mode))
-				continue
-			}
 			return nil, fmt.Errorf("failed to stat unveil path: %w", err)
 		}
 

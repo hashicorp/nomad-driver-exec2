@@ -485,12 +485,8 @@ func TestFunctional_cases(t *testing.T) {
 			unveilByTask:   false, // no gate needed — inside sandbox
 			exp:            &drivers.ExitResult{ExitCode: 0},
 		},
-		// /proc/self/mountinfo via explicit task unveil — the reported bug.
-		// Before fix: convert() called os.Stat("/proc/self/mountinfo") which
-		// followed the /proc/self symlink to the shim PID inode; after
-		// unshare --mount-proc the task's private /proc had different inodes,
-		// so Landlock returned EPERM. After fix: stat fails → virtualFSRoot
-		// fires → File rule registered by path string, survives namespace change.
+		// /proc/self/mountinfo via explicit task unveil
+		// convert() detects /proc/self/* via isProcSelfPath and promotes the entry to Dir("/proc","r")
 		{
 			name:           "read /proc/self/mountinfo via task unveil",
 			user:           "nomad-87000",
@@ -502,10 +498,8 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`\d+ \d+ \d+:\d+`), // mountinfo line format
 		},
-		// /proc/cpuinfo via explicit task unveil.
-		// Before fix: convert() emitted Dir("/proc/cpuinfo","r") — Landlock
-		// rejects Dir on a file inode with EINVAL. After fix: stat succeeds,
-		// IsDir=false → File("/proc/cpuinfo","r") — correct.
+		// /proc/cpuinfo via explicit task unveil
+		// IsDir=false → File("/proc/cpuinfo","r") emitted directly.
 		{
 			name:           "read /proc/cpuinfo via task unveil",
 			user:           "nomad-87000",
