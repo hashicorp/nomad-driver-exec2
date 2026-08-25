@@ -11,31 +11,6 @@ import (
 	"github.com/shoenig/go-landlock"
 )
 
-// When the nomad binary is invoked as exec2-shim, the format is
-// nomad exec2-shim [path, [...]] -- [commands, [...]]
-// so basically we need to find the first instance of '--' and split on that
-func split(args []string) ([]string, []string) {
-	var (
-		paths    []string
-		commands []string
-	)
-
-	index := 0
-	for ; index < len(args); index++ {
-		if args[index] == "--" {
-			index++
-			break
-		}
-		paths = append(paths, args[index])
-	}
-
-	for ; index < len(args); index++ {
-		commands = append(commands, args[index])
-	}
-
-	return paths, commands
-}
-
 func lockdown(defaults bool, elements []string) error {
 	paths, err := convert(elements)
 	if err != nil {

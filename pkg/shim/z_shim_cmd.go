@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 	"unsafe"
 
@@ -50,22 +49,19 @@ const (
 	// ExitBadLogging indicates the shim has terminated early due to being unable
 	// to open stdout or stderr output files (fifos).
 	ExitBadLogging = 41
+
+	// ExitBadConfig indicates the shim has terminated early due to being unable
+	// to read or parse the shim config file.
+	ExitBadConfig = 42
 )
 
 // init is the entrypoint for the 'nomad exec2-shim' invocation of nomad
 //
 // The argument format is as follows,
 //
-// 0. nomad            <- the executable name
-// 1. exec2-shim       <- this subcommand
-// 2. true/false       <- include default unveil paths
-// 3. <stdout path>    <- path to named pipe for standard output
-// 4. <stderr path>    <- path to named pipe for standard error
-// 5. <uid>            <- numeric user id for the task process
-// 6. <gid>            <- numeric group id for the task process
-// 7. cap,cap,...      <- comma-separated ambient capability names (empty string if none)
-// 8. [mode:path, ...] <- list of additional unveil paths
-// 9. --               <- sentinel between following commands
+//	0. nomad              <- the executable name
+//	1. exec2-shim         <- this subcommand
+//	2. <config file path> <- path to the JSON ShimConfig written by the driver
 func init() {
 	subproc.Do(SubCommand, func() int {
 		// we need to ignore the stop signal (which is sent to the entire
@@ -77,50 +73,42 @@ func init() {
 			<-sigs // do nothing; stay alive
 		}()
 
-		if n := len(os.Args); n <= 7 {
-			subproc.Print("failed to invoke exec2-shim with sufficient args: %d", n)
+		if len(os.Args) != 3 {
+			subproc.Print("exec2-shim requires exactly 1 argument (config path), got %d", len(os.Args)-2)
 			return ExitWrongArgs
 		}
 
-		defaults := os.Args[2] == "true"
-		outPipePath := os.Args[3]
-		errPipePath := os.Args[4]
-		uid, err := strconv.Atoi(os.Args[5])
+		cfg, err := ReadShimConfig(os.Args[2])
 		if err != nil {
-			subproc.Print("invalid uid %q: %v", os.Args[5], err)
-			return ExitWrongArgs
+			subproc.Print("failed to read shim config %q: %v", os.Args[2], err)
+			return ExitBadConfig
 		}
-		gid, err := strconv.Atoi(os.Args[6])
-		if err != nil {
-			subproc.Print("invalid gid %q: %v", os.Args[6], err)
-			return ExitWrongArgs
-		}
-		capsArg := os.Args[7]
 
-		// get the unveil paths and the rest of the command(s) to run
-		// from our command arguments (after uid, gid, and caps args)
-		args := os.Args[8:]
-		paths, commands := split(args)
-		paths = append(paths, "w:"+outPipePath)
-		paths = append(paths, "w:"+errPipePath)
+		outPipePath := cfg.OutPipe
+		errPipePath := cfg.ErrPipe
+
+		// copy unveil paths into a new slice to avoid mutating cfg.UnveilPaths,
+		// then append the write entries for stdout/stderr pipes
+		paths := make([]string, len(cfg.UnveilPaths), len(cfg.UnveilPaths)+2)
+		copy(paths, cfg.UnveilPaths)
+		paths = append(paths, "w:"+outPipePath, "w:"+errPipePath)
 
 		// resolve capability names to kernel integers before calling dropPrivileges;
 		// this is a pure string-to-integer mapping that requires no privileges
 		var caps []uintptr
-		if capsArg != "" {
-			capNames := strings.Split(capsArg, ",")
+		if len(cfg.Capabilities) > 0 {
 			var capErr error
-			caps, capErr = capabilities.Resolve(capNames)
+			caps, capErr = capabilities.Resolve(cfg.Capabilities)
 			if capErr != nil {
 				subproc.Print("failed to resolve capabilities: %v", capErr)
-				return ExitWrongArgs
+				return ExitBadConfig
 			}
 		}
 
 		// drop privileges conditionally: for non-root tasks, transitions uid/gid;
 		// for tasks with caps, restores them in permitted/effective/inheritable and
 		// raises as ambient so they survive into the task process via exec().
-		if err := dropPrivileges(uid, gid, caps); err != nil {
+		if err := dropPrivileges(cfg.UID, cfg.GID, caps); err != nil {
 			subproc.Print("failed to drop privileges: %v", err)
 			return subproc.ExitFailure
 		}
@@ -138,16 +126,16 @@ func init() {
 
 		// use landlock to isolate this process and child processes to the
 		// set of given filepaths
-		if err := lockdown(defaults, paths); err != nil {
+		if err := lockdown(cfg.UnveilDefaults, paths); err != nil {
 			debug("unable to lockdown: %v", err)
 			return subproc.ExitFailure
 		}
 
 		// locate the absolute path for the task command, as this must be
 		// the first argument to the execve(2) call that follows
-		cmdpath, err := exec.LookPath(commands[0])
+		cmdpath, err := exec.LookPath(cfg.Command)
 		if err != nil {
-			debug("failed to locate command %q: %v", commands[0], err)
+			debug("failed to locate command %q: %v", cfg.Command, err)
 			return subproc.ExitNotRunnable
 		}
 
@@ -157,7 +145,7 @@ func init() {
 		
 		// the environment has already been set for us by the exec2 driver;
 		// NOMAD_WORK_DIR is set to work_dir if configured, otherwise NOMAD_TASK_DIR
-		cmd := exec.Command(cmdpath, commands[1:]...)
+		cmd := exec.Command(cmdpath, cfg.Arguments...)
 		cmd.Dir = os.Getenv("NOMAD_WORK_DIR")
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
