@@ -17,7 +17,7 @@ import (
 const (
 	name          = "exec2"
 	version       = "v2.0.0"
-	handleVersion = 1
+	handleVersion = 2
 
 	// allowCapsDefault is the default set of Linux capabilities the exec2
 	// driver permits tasks to request, expressed as an HCL literal for use
