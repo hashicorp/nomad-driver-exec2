@@ -10,6 +10,7 @@ BREAKING CHANGES:
 
 IMPROVEMENTS:
 
+* Replaced the positional `os.Args` shim protocol with a versioned JSON config file (`.shim_config.json`) written into `NOMAD_TASK_DIR` before launch.Bumps `handleVersion` to 2; existing running tasks complete naturally before rescheduling. [[GH-101](https://github.com/hashicorp/nomad-driver-exec2/pull/101)]
 * Added optional `work_dir` task config field to override the default CWD. Accepts an absolute path or a path relative to the task directory parent. [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
 
 BUG FIXES:
