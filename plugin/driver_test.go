@@ -821,3 +821,83 @@ func TestFunctional_cap_add_not_allowed(t *testing.T) {
 	must.Error(t, err)
 	must.StrContains(t, err.Error(), "net_bind_service")
 }
+
+// startSleepTask is a test helper that starts a long-running "sleep infinity"
+// task using the given harness and returns the TaskConfig.
+func startSleepTask(t *testing.T, harness *dtests.DriverHarness) *drivers.TaskConfig {
+	t.Helper()
+
+	taskConfig := &TaskConfig{Command: "sleep", Args: []string{"infinity"}}
+
+	allocID := uuid.Generate()
+	taskName := "exec_sleep_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "root",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	cleanup := harness.MkAllocDir(task, true)
+	t.Cleanup(cleanup)
+
+	_, _, err := harness.StartTask(task)
+	must.NoError(t, err)
+	t.Cleanup(func() { _ = harness.DestroyTask(task.ID, true) })
+
+	must.NoError(t, harness.WaitUntilStarted(task.ID, 10*time.Second))
+
+	return task
+}
+
+// TestExecTaskStreaming_conformance runs Nomad's official exec streaming
+// conformance suite against the driver. It covers:
+//   - notty: basic stdout/stderr/exit-code, streaming output, stty check, stdin
+//   - tty:   basic merged output, streaming, window-size (stty), stdin, child procs
+//   - filesystem isolation (write a file inside exec, verify host cannot see it)
+//
+// Each scenario exercises ExecTaskStreamingRaw (the raw gRPC path) because the
+// Plugin implements drivers.ExecTaskStreamingRawDriver.
+func TestExecTaskStreaming_conformance(t *testing.T) {
+	ctests.RequireRoot(t)
+	ci.Parallel(t)
+
+	harness := newTestHarness(t, &Config{UnveilDefaults: true})
+	task := startSleepTask(t, harness)
+
+	dtests.ExecTaskStreamingConformanceTests(t, harness, task.ID)
+}
+
+// TestExecTask_stderr verifies that ExecTask correctly captures output written
+// to stderr and returns it separately from stdout.
+func TestExecTask_stderr(t *testing.T) {
+	ctests.RequireRoot(t)
+	ci.Parallel(t)
+
+	harness := newTestHarness(t, &Config{UnveilDefaults: true})
+	task := startSleepTask(t, harness)
+
+	result, err := harness.ExecTask(task.ID, []string{"/bin/sh", "-c", "echo err >&2"}, 10*time.Second)
+	must.NoError(t, err)
+	must.Eq(t, 0, result.ExitResult.ExitCode)
+	must.Eq(t, "", string(result.Stdout))
+	must.StrContains(t, string(result.Stderr), "err")
+}
+
+// TestExecTask_timeout verifies that ExecTask respects its deadline: a command
+// that sleeps longer than the timeout must be killed and return an error.
+func TestExecTask_timeout(t *testing.T) {
+	ctests.RequireRoot(t)
+	ci.Parallel(t)
+
+	harness := newTestHarness(t, &Config{UnveilDefaults: true})
+	task := startSleepTask(t, harness)
+
+	// 200 ms timeout against a command that sleeps 10 s — must be killed.
+	_, err := harness.ExecTask(task.ID, []string{"/bin/sleep", "10"}, 200*time.Millisecond)
+	must.Error(t, err)
+}
