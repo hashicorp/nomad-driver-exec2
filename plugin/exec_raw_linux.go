@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -79,7 +80,12 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 
-	// stdin + resize: gRPC stream → PTY master
+	// stdin + resize: gRPC stream → PTY master.
+	// Uses ptmMu to serialise Setsize/Write against the ptm.Close() call that
+	// follows cmd.Wait(). The goroutine is not added to wg because it blocks
+	// on stream.Recv() which is only unblocked by the gRPC runtime after the
+	// RPC returns; it will exit cleanly once ptm operations return ErrClosed.
+	var ptmMu sync.Mutex
 	go func() {
 		for {
 			msg, err := stream.Recv()
@@ -92,8 +98,14 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 			}
 			if msg.Stdin != nil {
 				if len(msg.Stdin.Data) > 0 {
-					if _, err := ptm.Write(msg.Stdin.Data); err != nil {
-						errCh <- err
+					ptmMu.Lock()
+					_, werr := ptm.Write(msg.Stdin.Data)
+					ptmMu.Unlock()
+					if werr != nil {
+						if isExecStreamClosed(werr) {
+							return
+						}
+						errCh <- werr
 						return
 					}
 				}
@@ -103,10 +115,12 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 			} else if msg.TtySize != nil {
 				// Forward terminal resize events so the process sees the
 				// correct window size (required for editors, less, etc.)
+				ptmMu.Lock()
 				_ = pty.Setsize(ptm, &pty.Winsize{
 					Rows: uint16(msg.TtySize.Height),
 					Cols: uint16(msg.TtySize.Width),
 				})
+				ptmMu.Unlock()
 			}
 		}
 	}()
@@ -138,9 +152,15 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	}()
 
 	waitErr := cmd.Wait()
-	// Closing PTM unblocks the stdout reader goroutine.
-	ptm.Close()
+	// Use SetDeadline to unblock the stdout goroutine's ptm.Read() without
+	// racing against ptm.Close(). SetDeadline is concurrency-safe on *os.File
+	// and causes the blocked Read to return with a timeout/poll error, which
+	// isExecStreamClosed treats as a clean-close. The actual ptm.Close() is
+	// handled by defer above, after wg.Wait() ensures all goroutines are done.
+	_ = ptm.SetDeadline(time.Now())
 	wg.Wait()
+	ptmMu.Lock()
+	ptmMu.Unlock() // fence: ensures stdin goroutine is not inside Setsize/Write when defer fires
 
 	// Send the final exit result back to Nomad.
 	_ = stream.Send(buildExecExitResult(cmd.ProcessState, waitErr))
@@ -328,9 +348,10 @@ func isExecStreamClosed(err error) bool {
 	if err == io.EOF || err == io.ErrClosedPipe {
 		return true
 	}
-	// os.ErrClosed is returned when reading from an *os.File that has already
-	// been closed (e.g. ptm after ptm.Close()). errors.Is unwraps *PathError.
-	if errors.Is(err, os.ErrClosed) {
+	// os.ErrClosed — read on an already-closed *os.File.
+	// os.ErrDeadlineExceeded — SetDeadline(time.Now()) fired to unblock Read.
+	// errors.Is unwraps *os.PathError for both.
+	if errors.Is(err, os.ErrClosed) || errors.Is(err, os.ErrDeadlineExceeded) {
 		return true
 	}
 	// EIO is returned by the kernel when the PTY slave has been closed; it may
