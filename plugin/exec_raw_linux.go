@@ -5,6 +5,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -315,16 +316,30 @@ func buildExecExitResult(ps *os.ProcessState, err error) *drivers.ExecTaskStream
 // has been cleanly closed and no further I/O should be attempted.
 //
 //   - io.EOF / io.ErrClosedPipe — pipe write-end closed (no-TTY path)
-//   - syscall.EIO — PTY slave closed after the process exited (normal TTY exit)
-//   - syscall.EBADF — PTY master was explicitly closed (ptm.Close at line 142)
-//     before the stdout goroutine finished its current read loop iteration;
-//     semantically identical to EIO for our purposes
+//   - os.ErrClosed — read on an *os.File after it was closed (ptm.Close unblocks
+//     a blocked Read; Go wraps the kernel EBADF as os.ErrClosed internally)
+//   - syscall.EIO — PTY slave closed after the process exited (normal TTY exit);
+//     may arrive unwrapped or wrapped inside an *os.PathError
+//   - syscall.EBADF — raw errno variant of the above
 func isExecStreamClosed(err error) bool {
 	if err == nil {
 		return false
 	}
 	if err == io.EOF || err == io.ErrClosedPipe {
 		return true
+	}
+	// os.ErrClosed is returned when reading from an *os.File that has already
+	// been closed (e.g. ptm after ptm.Close()). errors.Is unwraps *PathError.
+	if errors.Is(err, os.ErrClosed) {
+		return true
+	}
+	// EIO is returned by the kernel when the PTY slave has been closed; it may
+	// arrive as a raw syscall.Errno or wrapped inside an *os.PathError.
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		if errno, ok := pathErr.Err.(syscall.Errno); ok {
+			return errno == syscall.EIO || errno == syscall.EBADF
+		}
 	}
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.EIO || errno == syscall.EBADF
