@@ -479,7 +479,16 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 
-	exitCode, err := exitCode(command.Run())
+	runErr := command.Run()
+
+	// Context expiry (deadline exceeded or cancel) takes priority: the process
+	// was killed by exec.CommandContext, so the *exec.ExitError is a side-effect
+	// of the kill rather than a meaningful exit code from the command.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("exec task timed out: %w", err)
+	}
+
+	code, err := exitCode(runErr)
 	if err != nil {
 		return nil, fmt.Errorf("exec task failed: %w", err)
 	}
@@ -487,7 +496,7 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 	return &drivers.ExecTaskResult{
 		Stdout:     stdout.Bytes(),
 		Stderr:     stderr.Bytes(),
-		ExitResult: &drivers.ExitResult{ExitCode: exitCode},
+		ExitResult: &drivers.ExitResult{ExitCode: code},
 	}, nil
 }
 
@@ -513,12 +522,20 @@ func (p *Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptio
 	command.Stdout = execOptions.Stdout
 	command.Stderr = execOptions.Stderr
 
-	exitCode, err := exitCode(command.Run())
+	runErr := command.Run()
+
+	// Context cancellation (client disconnect, server-side timeout) takes
+	// priority over the *exec.ExitError produced by the resulting SIGKILL.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("exec task streaming cancelled: %w", err)
+	}
+
+	code, err := exitCode(runErr)
 	if err != nil {
 		return nil, fmt.Errorf("exec task streaming failed: %w", err)
 	}
 
-	return &drivers.ExitResult{ExitCode: exitCode}, nil
+	return &drivers.ExitResult{ExitCode: code}, nil
 }
 
 // exitCode extracts the process exit code from a command error.

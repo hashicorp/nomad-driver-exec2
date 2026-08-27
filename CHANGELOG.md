@@ -2,6 +2,7 @@
 
 FEATURES:
 
+* Implement `ExecTask` and `ExecTaskStreaming` so the driver supports `nomad alloc exec` (including interactive PTY sessions via `-t`) and Consul/Nomad script checks. [[GH-102](https://github.com/hashicorp/nomad-driver-exec2/pull/102)]
 * Added `allow_caps` (plugin config), `cap_add` and `cap_drop` (task config) to support Linux ambient capabilities for tasks. [[GH-96](https://github.com/hashicorp/nomad-driver-exec2/pull/96)]
 
 BREAKING CHANGES:
