@@ -4,6 +4,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -457,16 +459,120 @@ func (p *Plugin) SignalTask(taskID, signal string) error {
 	return h.Signal(signal)
 }
 
-// ExecTask is not yet implemented.
-func (*Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
-	// TODO(shoenig): implement this.
-	return nil, errors.New("ExecTask is not yet implemented")
+// ExecTask runs cmd synchronously inside the running task's Linux namespaces
+// and returns the buffered stdout, stderr, and exit code. It is used by Nomad
+// for script checks.
+func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
+	h, exists := p.tasks.Get(taskID)
+	if !exists {
+		return nil, drivers.ErrTaskNotFound
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	pid, netns := h.ExecInfo()
+	args := append(nsenterArgs(pid, netns), cmd...)
+	command := exec.CommandContext(ctx, args[0], args[1:]...)
+
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+
+	runErr := command.Run()
+
+	// Context expiry (deadline exceeded or cancel) takes priority: the process
+	// was killed by exec.CommandContext, so the *exec.ExitError is a side-effect
+	// of the kill rather than a meaningful exit code from the command.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("exec task timed out: %w", err)
+	}
+
+	code, err := exitCode(runErr)
+	if err != nil {
+		return nil, fmt.Errorf("exec task failed: %w", err)
+	}
+
+	return &drivers.ExecTaskResult{
+		Stdout:     stdout.Bytes(),
+		Stderr:     stderr.Bytes(),
+		ExitResult: &drivers.ExitResult{ExitCode: code},
+	}, nil
 }
 
-// ExecTaskStreaming is not yet implemented.
-func (*Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
-	// TODO(shoenig): implement this.
-	return nil, errors.New("ExecTaskStreaming is not yet implemented")
+// ExecTaskStreaming implements drivers.ExecTaskStreamingDriver and runs cmd
+// inside the running task's Linux namespaces via nsenter, streaming
+// stdin/stdout/stderr in real time.
+//
+// NOTE: on Linux this method is superseded by ExecTaskStreamingRaw
+// (exec_raw_linux.go), which Nomad's gRPC server and test harness prefer when
+// the driver implements drivers.ExecTaskStreamingRawDriver. ExecTaskStreaming
+// is therefore never called in practice on this platform; it is kept as a
+// documented non-TTY fallback in case the Raw interface is unavailable.
+func (p *Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
+	h, exists := p.tasks.Get(taskID)
+	if !exists {
+		return nil, drivers.ErrTaskNotFound
+	}
+
+	pid, netns := h.ExecInfo()
+	args := append(nsenterArgs(pid, netns), execOptions.Command...)
+	command := exec.CommandContext(ctx, args[0], args[1:]...)
+	command.Stdin = execOptions.Stdin
+	command.Stdout = execOptions.Stdout
+	command.Stderr = execOptions.Stderr
+
+	runErr := command.Run()
+
+	// Context cancellation (client disconnect, server-side timeout) takes
+	// priority over the *exec.ExitError produced by the resulting SIGKILL.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("exec task streaming cancelled: %w", err)
+	}
+
+	code, err := exitCode(runErr)
+	if err != nil {
+		return nil, fmt.Errorf("exec task streaming failed: %w", err)
+	}
+
+	return &drivers.ExitResult{ExitCode: code}, nil
+}
+
+// exitCode extracts the process exit code from a command error.
+func exitCode(err error) (int, error) {
+	if err == nil {
+		return 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), nil
+	}
+	return 0, err
+}
+
+// nsenterArgs builds the nsenter command prefix that enters the running task's
+// mount, pid, and ipc namespaces by PID. If netns is non-empty the task's
+// network namespace is entered as well.
+func nsenterArgs(pid int, netns string) []string {
+	// pre-allocate for the fixed 6 args plus optional --net and the -- sentinel
+	n := 7
+	if netns != "" {
+		n = 8
+	}
+	args := make([]string, 0, n)
+	args = append(args,
+		"nsenter",
+		"--no-fork",
+		"--target="+strconv.Itoa(pid),
+		"--mount",
+		"--pid",
+		"--ipc",
+	)
+	if netns != "" {
+		args = append(args, "--net="+netns)
+	}
+	args = append(args, "--")
+	return args
 }
 
 // netns returns the filepath to the network namespace if the network

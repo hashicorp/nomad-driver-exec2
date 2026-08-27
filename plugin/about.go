@@ -77,7 +77,7 @@ var taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 var capabilities = &drivers.Capabilities{
 	DynamicWorkloadUsers: true,
 	SendSignals:          true,
-	Exec:                 false,
+	Exec:                 true,
 	FSIsolation:          fsisolation.Unveil,
 	MustInitiateNetwork:  false,
 	MountConfigs:         drivers.MountConfigSupportNone,
