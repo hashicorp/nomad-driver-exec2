@@ -7,6 +7,8 @@ of CPU and memory utilization. `exec2` leverages kernel features such as the
 [Landlock LSM](https://docs.kernel.org/security/landlock.html), cgroups v2, and
 ordinary file system permissions.
 
+Ready-to-use job examples are in the [`examples/`](examples/) directory.
+
 ### Requirements
 
 - Linux 5.15+
@@ -19,11 +21,32 @@ Recent mainstream Linux distributions such as Ubuntu 22.04 and Fedora 36 meet
 the requirements and are well supported. RHEL does not currently enable Landlock
 and therefore cannot be supported.
 
+### When to Use exec2
+
+`exec2` is the right choice when:
+
+- You want to run an **ordinary Linux process** (a binary, a script, a JVM
+  program, a Python service) directly on the Nomad client without a container
+  runtime.
+- You need **fast startup times** and minimal overhead — `exec2` starts tasks
+  in microseconds with no image pull or container shim in the path.
+- You want stronger isolation than `raw_exec` provides. `exec2` uses Landlock
+  for filesystem isolation and cgroups v2 for resource limits, giving you a
+  meaningful security boundary without the full weight of a container.
+- Your binary or runtime is already installed on the Nomad node (or delivered
+  via a Nomad artifact / template block).
+
+`exec2` is **not** the right choice when:
+
+- Your workload requires OCI image distribution or a container-level network
+  namespace — use the `docker` or `podman` drivers instead.
+- The node does not have Landlock enabled (e.g. RHEL without a custom kernel).
+
 ### Simple Example
 
 Here is a simple example running `env`. It makes use of a dynamic workload
-user and does not require any extra filepaths to `unveil`. There are more
-complex examples at the bottom of the README.
+user and does not require any extra filepaths to `unveil`. More examples are
+at the bottom of this README and in the [`examples/`](examples/) directory.
 
 ```hcl
 job "env" {
@@ -214,6 +237,7 @@ config {
   oom_score_adj = 500
   cap_add       = ["net_bind_service"]
   cap_drop      = []
+  work_dir      = "/path/to/workdir"
 }
 ```
 
@@ -249,6 +273,15 @@ config {
   # grant two caps then selectively revoke one
   cap_add  = ["net_bind_service", "chown"]
   cap_drop = ["chown"]
+  ```
+
+  - `work_dir` - (optional) - Override the default working directory for the
+  task. Accepts an absolute path or a path relative to the task directory
+  parent. Defaults to `$NOMAD_TASK_DIR` (the task's local directory).
+
+  ```hcl
+  # set CWD to the shared alloc directory
+  work_dir = "${NOMAD_ALLOC_DIR}"
   ```
 
 ##### cpu
@@ -309,12 +342,15 @@ make hack
 
 ### Common Examples
 
+More complete, production-oriented examples with explanatory comments are in the
+[`examples/`](examples/) directory.
+
 #### python http
 
 This example demonstrates using Python's built-in HTTP server to serve the contents
 of the task's own task directory. Notice the use of `unveil` to give the task access
 to `/etc/mime.types` with read-only permissions, which is required for Python's HTTP
-server to operator correctly.
+server to operate correctly.
 
 ```hcl
 job "http" {
