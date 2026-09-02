@@ -14,6 +14,7 @@ IMPROVEMENTS:
 
 BUG FIXES:
 
+* Fixed tasks failing to start after a host reboot. [[GH-104](https://github.com/hashicorp/nomad-driver-exec2/pull/104)]
 * Fixed mount propagation so host mounts remain visible while task-internal mounts stay isolated from the host. [[GH-99](https://github.com/hashicorp/nomad-driver-exec2/pull/99)]
 * Fixed `GOMAXPROCS` to prevent Go workloads from being over-threaded against the host CPU capacity. [[GH-98](https://github.com/hashicorp/nomad-driver-exec2/pull/98)]
 * Error messages from the `unshare`/`nsenter` shim processes now appear in the allocation logs. [[GH-95](https://github.com/hashicorp/nomad-driver-exec2/pull/95)]
