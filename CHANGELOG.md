@@ -11,6 +11,7 @@ BREAKING CHANGES:
 IMPROVEMENTS:
 
 * Added optional `work_dir` task config field to override the default CWD. Accepts an absolute path or a path relative to the task directory parent. [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
+* Added `examples/` directory with production-oriented job templates for common exec2 patterns (shell scripts, ambient capabilities, host-mounted paths). [[GH-103](https://github.com/hashicorp/nomad-driver-exec2/pull/103)]
 
 BUG FIXES:
 
