@@ -209,6 +209,17 @@ func fixpipe(path string, uid, gid int) error {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 
+	// After a host reboot the alloc-mounts bind mount is gone; recreate the
+	// logs directory and FIFO before attempting to chown either of them.
+	// Use 0o777 to match the permissions Nomad sets when it creates the logs
+	// directory in allocdir (SharedAllocDirs are created with fileMode777).
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		return fmt.Errorf("error creating fifo parent directory %q: %w", dir, err)
+	}
+	if err := unix.Mkfifo(path, 0o600); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("error creating fifo %q: %w", path, err)
+	}
+
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return fmt.Errorf("error opening fifo parent directory %q: %w", dir, err)
