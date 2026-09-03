@@ -11,6 +11,7 @@ BREAKING CHANGES:
 IMPROVEMENTS:
 
 * Added optional `work_dir` task config field to override the default CWD. Accepts an absolute path or a path relative to the task directory parent. [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
+* Task memory stats now include RSS on cgroups v2 systems. [[GH-105](https://github.com/hashicorp/nomad-driver-exec2/pull/105)]
 
 BUG FIXES:
 
