@@ -821,3 +821,74 @@ func TestFunctional_cap_add_not_allowed(t *testing.T) {
 	must.Error(t, err)
 	must.StrContains(t, err.Error(), "net_bind_service")
 }
+
+// TestFunctional_TaskStats_RSS verifies that RSS is reported as a non-zero value
+// in the MemoryStats of a running task, and that "RSS" is included in Measured.
+// RSS is derived from the "anon" field of the cgroup memory.stat file.
+func TestFunctional_TaskStats_RSS(t *testing.T) {
+	ctests.RequireRoot(t)
+	ci.Parallel(t)
+
+	pluginConfig := &Config{
+		UnveilDefaults: true,
+	}
+
+	taskConfig := &TaskConfig{
+		Command: "sleep",
+		Args:    []string{"infinity"},
+	}
+
+	allocID := uuid.Generate()
+	taskName := "test_rss_stats_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "nomad-80000",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	harness := newTestHarness(t, pluginConfig)
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	cleanup := harness.MkAllocDir(task, true)
+	defer cleanup()
+
+	_, _, err := harness.StartTask(task)
+	must.NoError(t, err)
+
+	defer func() {
+		_ = harness.DestroyTask(task.ID, true)
+	}()
+
+	// give the task a moment to start and populate cgroup memory.stat
+	time.Sleep(1 * time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// TaskStats returns a channel that emits on the given interval
+	statsCh, err := harness.TaskStats(ctx, task.ID, time.Second)
+	must.NoError(t, err)
+
+	select {
+	case usage := <-statsCh:
+		must.NotNil(t, usage)
+		must.NotNil(t, usage.ResourceUsage)
+
+		mem := usage.ResourceUsage.MemoryStats
+		must.NotNil(t, mem)
+
+		// RSS must be non-zero — a running process always has anonymous memory
+		// (stack at minimum). It is sourced from the "anon" field in memory.stat.
+		must.Positive(t, mem.RSS)
+
+		// "RSS" must be declared in Measured so Nomad surfaces it in the UI/API
+		must.SliceContainsAll(t, mem.Measured, []string{"RSS", "Cache", "Swap", "Usage"})
+
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for task stats")
+	}
+}

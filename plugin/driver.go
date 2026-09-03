@@ -508,10 +508,11 @@ func (p *Plugin) stats(ctx context.Context, ch chan<- *drivers.TaskResourceUsage
 		ch <- &drivers.TaskResourceUsage{
 			ResourceUsage: &cstructs.ResourceUsage{
 				MemoryStats: &cstructs.MemoryStats{
+					RSS:      usage.RSS,
 					Cache:    usage.Cache,
 					Swap:     usage.Swap,
 					Usage:    usage.Memory,
-					Measured: []string{"Cache", "Swap", "Usage"},
+					Measured: []string{"RSS", "Cache", "Swap", "Usage"},
 				},
 				CpuStats: &cstructs.CpuStats{
 					UserMode:         float64(usage.User),
