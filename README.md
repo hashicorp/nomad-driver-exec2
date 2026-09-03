@@ -161,6 +161,7 @@ plugin "nomad-driver-exec2" {
     unveil_defaults = true
     unveil_paths    = []
     unveil_by_task  = false
+    allow_caps      = ["net_bind_service", "chown", "kill", ...]
   }
 }
 ```
@@ -178,6 +179,24 @@ plugin "nomad-driver-exec2" {
   - `unveil_by_task` - (default: `false`) - enable or disable job submitters to
   specify additional filesystem path access within task config
 
+  - `allow_caps` - (default: 13 Nomad-default capabilities) - an operator
+  allowlist of Linux capability names that tasks on this node are permitted to
+  request. Capability names are case-insensitive and accept all common formats
+  (`net_bind_service`, `NET_BIND_SERVICE`, `CAP_NET_BIND_SERVICE`). Set to `[]`
+  to disallow all capability grants on this node.
+
+  ```hcl
+  # allow tasks to request net_bind_service only
+  allow_caps = ["net_bind_service"]
+
+  # disallow all capability grants
+  allow_caps = []
+  ```
+
+  The default set is:
+  `audit_write`, `chown`, `dac_override`, `fowner`, `fsetid`, `kill`, `mknod`,
+  `net_bind_service`, `setfcap`, `setgid`, `setpcap`, `setuid`, `sys_chroot`.
+
 #### Task Configuration
 
 ##### config
@@ -193,6 +212,8 @@ config {
   args          = ["/etc/os-release"]
   unveil        = ["r:/etc/os-release"]
   oom_score_adj = 500
+  cap_add       = ["net_bind_service"]
+  cap_drop      = []
 }
 ```
 
@@ -208,6 +229,27 @@ config {
 
   - `oom_score_adj` - (optional) - The likelihood of the task being OOM killed,
   must be a positive integer. Defaults to `0`.
+
+  - `cap_add` - (optional) - A list of Linux capability names to add as ambient
+  capabilities for the task process. The effective capability set starts empty;
+  `cap_add` adds to it. Each name must be present in the operator's `allow_caps`
+  plugin config or the task is rejected at start time. Capability names are
+  case-insensitive and accept all common formats (`net_bind_service`,
+  `NET_BIND_SERVICE`, `CAP_NET_BIND_SERVICE`). Defaults to `[]`.
+
+  - `cap_drop` - (optional) - A list of Linux capability names to remove from
+  the set assembled by `cap_add`. Names are normalized the same way as `cap_add`.
+  Useful for dropping a specific capability when `cap_add` was set broadly.
+  Defaults to `[]`.
+
+  ```hcl
+  # grant CAP_NET_BIND_SERVICE so the task can bind port 80 without root
+  cap_add = ["net_bind_service"]
+
+  # grant two caps then selectively revoke one
+  cap_add  = ["net_bind_service", "chown"]
+  cap_drop = ["chown"]
+  ```
 
 ##### cpu
 
@@ -239,6 +281,7 @@ can be used as constraints when authoring jobs.
 ```text
 driver.exec2.unveil.defaults    = true
 driver.exec2.unveil.tasks       = true
+driver.exec2.caps.allowlist     = audit_write,chown,dac_override,fowner,fsetid,kill,mknod,net_bind_service,setfcap,setgid,setpcap,setuid,sys_chroot
 ```
 
 ### Install

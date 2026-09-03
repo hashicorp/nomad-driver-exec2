@@ -18,6 +18,11 @@ const (
 	name          = "exec2"
 	version       = "v2.0.0"
 	handleVersion = 1
+
+	// allowCapsDefault is the default set of Linux capabilities the exec2
+	// driver permits tasks to request, expressed as an HCL literal for use
+	// in hclspec.NewLiteral.
+	allowCapsDefault = `["audit_write","chown","dac_override","fowner","fsetid","kill","mknod","net_bind_service","setfcap","setgid","setpcap","setuid","sys_chroot"]`
 )
 
 // PluginID is the exec plugin metadata registered in the plugin
@@ -52,6 +57,10 @@ var driverConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		hclspec.NewLiteral("false"),
 	),
 	"unveil_paths": hclspec.NewAttr("unveil_paths", "list(string)", false),
+	"allow_caps": hclspec.NewDefault(
+		hclspec.NewAttr("allow_caps", "list(string)", false),
+		hclspec.NewLiteral(allowCapsDefault),
+	),
 })
 
 // taskConfigSpec is the HCL configuration set for the task on the jobspec
@@ -60,6 +69,8 @@ var taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 	"args":          hclspec.NewAttr("args", "list(string)", false),
 	"unveil":        hclspec.NewAttr("unveil", "list(string)", false),
 	"oom_score_adj": hclspec.NewAttr("oom_score_adj", "number", false),
+	"cap_add":       hclspec.NewAttr("cap_add", "list(string)", false),
+	"cap_drop":      hclspec.NewAttr("cap_drop", "list(string)", false),
 	"work_dir":      hclspec.NewAttr("work_dir", "string", false),
 })
 
@@ -83,6 +94,7 @@ type Config struct {
 	UnveilDefaults bool     `codec:"unveil_defaults"`
 	UnveilPaths    []string `codec:"unveil_paths"`
 	UnveilByTask   bool     `codec:"unveil_by_task"`
+	AllowCaps      []string `codec:"allow_caps"`
 }
 
 // TaskConfig represents the exec2 driver task configuration that gets set in
@@ -92,5 +104,7 @@ type TaskConfig struct {
 	Args        []string `codec:"args"`
 	Unveil      []string `codec:"unveil"`
 	OOMScoreAdj int      `codec:"oom_score_adj"`
+	CapAdd      []string `codec:"cap_add"`
+	CapDrop     []string `codec:"cap_drop"`
 	WorkDir     string   `codec:"work_dir"`
 }

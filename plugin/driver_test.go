@@ -153,12 +153,15 @@ func TestFunctional_cases(t *testing.T) {
 		command string
 		args    []string
 		unveil  []string
+		capAdd  []string
+		capDrop []string
 		workDir string // relative or absolute path; empty defaults to NOMAD_TASK_DIR
 
 		// plugin config
 		unveilDefaults bool
 		unveilByTask   bool
 		unveilPaths    []string
+		allowCaps      []string
 
 		// expectations
 		exp      *drivers.ExitResult
@@ -453,6 +456,76 @@ func TestFunctional_cases(t *testing.T) {
 			exp:            &drivers.ExitResult{ExitCode: 0},
 			stdoutRe:       regexp.MustCompile(`\w+/tmp/tmp\.\w+`),
 		},
+		// cap_add: a granted capability is present as ambient in the task process.
+		// We read the ambient cap bitmask from /proc/self/status and verify it is
+		// non-zero. CAP_NET_BIND_SERVICE is bit 10 → bitmask 0x0000000000000400.
+		// /proc is unveiled so the PID-namespace /proc/self is reachable.
+		{
+			name:           "cap_add ambient cap is raised in task",
+			user:           "nomad-80000",
+			command:        "sh",
+			args:           []string{"-c", "grep CapAmb /proc/self/status"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc"},
+			allowCaps:      []string{"net_bind_service"},
+			capAdd:         []string{"net_bind_service"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			// match any non-zero hex value in the CapAmb field
+			stdoutRe: regexp.MustCompile(`CapAmb:\s+[0-9a-f]*[1-9a-f][0-9a-f]*`),
+		},
+		{
+			name:           "cap_add ambient cap is raised in root task",
+			user:           "root",
+			command:        "sh",
+			args:           []string{"-c", "grep CapAmb /proc/self/status"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc"},
+			allowCaps:      []string{"net_bind_service"},
+			capAdd:         []string{"net_bind_service"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`CapAmb:\s+[0-9a-f]*[1-9a-f][0-9a-f]*`),
+		},
+		// no cap_add means CapAmb must be all-zeroes; guards against accidental raises.
+		{
+			name:           "no cap_add means CapAmb is zero",
+			user:           "nomad-80000",
+			command:        "sh",
+			args:           []string{"-c", "grep CapAmb /proc/self/status"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc"},
+			allowCaps:      []string{"net_bind_service"},
+			// capAdd intentionally omitted — no caps requested
+			exp:      &drivers.ExitResult{ExitCode: 0},
+			stdoutRe: regexp.MustCompile(`CapAmb:\s+0000000000000000`),
+		},
+		// cap names in mixed casing with CAP_ prefix must be accepted when
+		// allow_caps holds the lowercase unprefixed equivalent.
+		{
+			name:           "cap_add normalized casing accepted",
+			user:           "nomad-80000",
+			command:        "sh",
+			args:           []string{"-c", "grep CapAmb /proc/self/status"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc"},
+			allowCaps:      []string{"net_bind_service"},     // lowercase, no prefix
+			capAdd:         []string{"CAP_NET_BIND_SERVICE"}, // uppercase, with prefix
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`CapAmb:\s+[0-9a-f]*[1-9a-f][0-9a-f]*`),
+		},
+		// cap_drop removes a cap that cap_add granted; effective set must be empty.
+		{
+			name:           "cap_drop removes cap added by cap_add",
+			user:           "nomad-80000",
+			command:        "sh",
+			args:           []string{"-c", "grep CapAmb /proc/self/status"},
+			unveilDefaults: true,
+			unveilPaths:    []string{"r:/proc"},
+			allowCaps:      []string{"net_bind_service"},
+			capAdd:         []string{"net_bind_service"},
+			capDrop:        []string{"net_bind_service"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`CapAmb:\s+0000000000000000`),
+    },
 		// cwd is the task directory (not in a veiled parent path)
 		{
 			name:           "cwd is task dir",
@@ -553,11 +626,12 @@ func TestFunctional_cases(t *testing.T) {
 				UnveilDefaults: tc.unveilDefaults,
 				UnveilByTask:   tc.unveilByTask,
 				UnveilPaths:    tc.unveilPaths,
+				AllowCaps:      tc.allowCaps,
 			}
 
 			allocID := uuid.Generate()
 			taskName := "test_cases_" + uuid.Short()
-
+	
 			task := &drivers.TaskConfig{
 				User:      tc.user,
 				ID:        uuid.Generate(),
@@ -565,16 +639,18 @@ func TestFunctional_cases(t *testing.T) {
 				AllocID:   allocID,
 				Resources: basicResources(allocID, taskName),
 			}
-
+	
 			harness := newTestHarness(t, pluginConfig)
 			harness.MakeTaskCgroup(task.AllocID, task.Name)
 			cleanup := harness.MkAllocDir(task, true)
 			defer cleanup()
-
+	
 			taskConfig := &TaskConfig{
 				Command: tc.command,
 				Args:    tc.args,
 				Unveil:  tc.unveil,
+				CapAdd:  tc.capAdd,
+				CapDrop: tc.capDrop,
 				WorkDir: tc.workDir,
 			}
 
@@ -659,6 +735,7 @@ func Test_doFingerprint_normal(t *testing.T) {
 	p.config = &Config{
 		UnveilByTask:   true,
 		UnveilDefaults: true,
+		AllowCaps:      []string{"net_bind_service", "chown"},
 	}
 	fp := p.doFingerprint(exec.LookPath)
 
@@ -667,6 +744,7 @@ func Test_doFingerprint_normal(t *testing.T) {
 	must.Eq(t, map[string]*dstructs.Attribute{
 		"driver.exec2.unveil.tasks":    dstructs.NewBoolAttribute(true),
 		"driver.exec2.unveil.defaults": dstructs.NewBoolAttribute(true),
+		"driver.exec2.caps.allowlist":  dstructs.NewStringAttribute("net_bind_service,chown"),
 	}, fp.Attributes)
 }
 
@@ -726,4 +804,70 @@ func Test_tools(t *testing.T) {
 		must.NoError(t, err)
 		t.Log("path to nsenter is: " + path)
 	})
+}
+
+// TestSetConfig_AllowCaps_Validation verifies that SetConfig rejects unknown
+// capability names in the allow_caps plugin configuration.
+func TestSetConfig_AllowCaps_Validation(t *testing.T) {
+	ci.Parallel(t)
+
+	logger := testlog.HCLogger(t)
+	p := New(logger).(*Plugin)
+
+	baseConfig := &base.Config{
+		AgentConfig: &base.AgentConfig{
+			Driver: &base.ClientDriverConfig{
+				Topology: structs.MockWorkstationTopology(),
+			},
+		},
+	}
+
+	invalidConfig := &Config{
+		UnveilDefaults: true,
+		AllowCaps:      []string{"net_bind_service", "not_a_real_capability"},
+	}
+	must.NoError(t, base.MsgPackEncode(&baseConfig.PluginConfig, invalidConfig))
+
+	err := p.SetConfig(baseConfig)
+	must.Error(t, err)
+	must.StrContains(t, err.Error(), "not_a_real_capability")
+}
+
+// TestFunctional_cap_add_not_allowed verifies that a task requesting a
+// capability not present in the plugin allow_caps list is rejected at start
+// time with a descriptive error.
+func TestFunctional_cap_add_not_allowed(t *testing.T) {
+	ctests.RequireRoot(t)
+	ci.Parallel(t)
+
+	pluginConfig := &Config{
+		UnveilDefaults: true,
+		AllowCaps:      []string{}, // empty: no caps permitted
+	}
+
+	taskConfig := &TaskConfig{
+		Command: "env",
+		CapAdd:  []string{"net_bind_service"},
+	}
+
+	allocID := uuid.Generate()
+	taskName := "test_caps_not_allowed_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "nomad-80000",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	harness := newTestHarness(t, pluginConfig)
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	cleanup := harness.MkAllocDir(task, true)
+	defer cleanup()
+
+	_, _, err := harness.StartTask(task)
+	must.Error(t, err)
+	must.StrContains(t, err.Error(), "net_bind_service")
 }

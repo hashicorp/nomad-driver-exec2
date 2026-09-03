@@ -1,5 +1,9 @@
 ## UNRELEASED
 
+FEATURES:
+
+* Added `allow_caps` (plugin config), `cap_add` and `cap_drop` (task config) to support Linux ambient capabilities for tasks. [[GH-96](https://github.com/hashicorp/nomad-driver-exec2/pull/96)]
+
 BREAKING CHANGES:
 
 * Task working directory is now explicitly set to `$NOMAD_TASK_DIR`. Jobs using relative args (e.g. `args = ["local/run.sh"]`) must switch to absolute paths (e.g. `command = "${NOMAD_TASK_DIR}/run.sh"`). [[GH-97](https://github.com/hashicorp/nomad-driver-exec2/pull/97)]
@@ -11,6 +15,7 @@ IMPROVEMENTS:
 BUG FIXES:
 
 * Fixed `permission denied` when a task reads files under `/proc` (e.g. `r:/proc/self/mountinfo`) via an explicit `unveil` entry. [[GH-100](https://github.com/hashicorp/nomad-driver-exec2/pull/100)]
+* Fixed tasks failing to start after a host reboot. [[GH-104](https://github.com/hashicorp/nomad-driver-exec2/pull/104)]
 * Fixed mount propagation so host mounts remain visible while task-internal mounts stay isolated from the host. [[GH-99](https://github.com/hashicorp/nomad-driver-exec2/pull/99)]
 * Fixed `GOMAXPROCS` to prevent Go workloads from being over-threaded against the host CPU capacity. [[GH-98](https://github.com/hashicorp/nomad-driver-exec2/pull/98)]
 * Error messages from the `unshare`/`nsenter` shim processes now appear in the allocation logs. [[GH-95](https://github.com/hashicorp/nomad-driver-exec2/pull/95)]
