@@ -505,6 +505,9 @@ func extractMemStat(s string) (cache, rss uint64) {
 		case strings.HasPrefix(text, "anon "):
 			rss = read(text)
 		}
+		if cache != 0 && rss != 0 {
+			break // both found, stop scanning
+		}
 	}
 	return
 }

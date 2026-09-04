@@ -853,24 +853,21 @@ func TestFunctional_TaskStats_RSS(t *testing.T) {
 
 	harness := newTestHarness(t, pluginConfig)
 	harness.MakeTaskCgroup(task.AllocID, task.Name)
-	cleanup := harness.MkAllocDir(task, true)
-	defer cleanup()
+	t.Cleanup(harness.MkAllocDir(task, true))
 
 	_, _, err := harness.StartTask(task)
 	must.NoError(t, err)
 
-	defer func() {
+	t.Cleanup(func() {
 		_ = harness.DestroyTask(task.ID, true)
-	}()
+	})
 
-	// give the task a moment to start and populate cgroup memory.stat
-	time.Sleep(1 * time.Second)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	// TaskStats returns a channel that emits on the given interval
-	statsCh, err := harness.TaskStats(ctx, task.ID, time.Second)
+	// TaskStats emits on the given interval; the first emission populates cgroup
+	// memory.stat values. 200ms is fast enough to not slow the test suite.
+	statsCh, err := harness.TaskStats(ctx, task.ID, 200*time.Millisecond)
 	must.NoError(t, err)
 
 	select {
