@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -259,7 +258,7 @@ func (e *exe) Stats() *resources.Utilization {
 	swapCurrent, _ := strconv.Atoi(swapCurrentS)
 
 	memStatS, _ := e.readCG("memory.stat")
-	memCache := extractRe(memStatS)
+	memCache, memRSS := extractMemStat(memStatS)
 
 	cpuStatsS, _ := e.readCG("cpu.stat")
 	usr, system, total := extractCPU(cpuStatsS)
@@ -273,6 +272,7 @@ func (e *exe) Stats() *resources.Utilization {
 		Memory: uint64(memCurrent),
 		Swap:   uint64(swapCurrent),
 		Cache:  memCache,
+		RSS:    memRSS,
 
 		// cpu stats
 		System:  systemPct,
@@ -501,20 +501,26 @@ func (e *exe) setOomScoreAdj(pid int) error {
 	)
 }
 
-var (
-	memCacheRe = regexp.MustCompile(`file\s+(\d+)`)
-)
-
-func extractRe(s string) uint64 {
-	matches := memCacheRe.FindStringSubmatch(s)
-	if len(matches) != 2 {
-		return 0
+func extractMemStat(s string) (cache, rss uint64) {
+	read := func(line string) uint64 {
+		num := line[strings.Index(line, " ")+1:]
+		v, _ := strconv.ParseUint(num, 10, 64)
+		return v
 	}
-	value, err := strconv.ParseInt(matches[1], 10, 64)
-	if err != nil {
-		return 0
+	scanner := bufio.NewScanner(strings.NewReader(s))
+	for scanner.Scan() {
+		text := scanner.Text()
+		switch {
+		case strings.HasPrefix(text, "file "):
+			cache = read(text)
+		case strings.HasPrefix(text, "anon "):
+			rss = read(text)
+		}
+		if cache != 0 && rss != 0 {
+			break // both found, stop scanning
+		}
 	}
-	return uint64(value)
+	return
 }
 
 func extractCPU(s string) (user, system, total resources.MicroSecond) {
