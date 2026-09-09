@@ -4,6 +4,7 @@
 package shim
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -164,8 +165,17 @@ func init() {
 
 		var code = 0
 		if err = cmd.Run(); err != nil {
-			ee := err.(*exec.ExitError)
-			code = ee.ExitCode()
+			// cmd.Run() can return errors other than *exec.ExitError — for
+			// example *fs.PathError when chdir into cmd.Dir fails because an
+			// explicit work_dir is not unveiled or does not exist. A bare type
+			// assertion panics in that case; use errors.As instead.
+			var ee *exec.ExitError
+			if errors.As(err, &ee) {
+				code = ee.ExitCode()
+			} else {
+				debug("task command failed: %v", err)
+				code = subproc.ExitFailure
+			}
 		}
 
 		_ = stdout.Close()
