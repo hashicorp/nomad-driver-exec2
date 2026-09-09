@@ -669,10 +669,7 @@ func allocRootOf(cfg *drivers.TaskConfig) string {
 }
 
 // prepareMounts converts Nomad's host/CSI volume mounts into shim bind mounts
-// and the corresponding Landlock unveil entries. Because exec2 tasks share the
-// host root filesystem inside a slave-propagated mount namespace, a mount
-// target resolves against the host root; the mountpoint must therefore exist
-// before the bind. To avoid polluting the host filesystem, a missing target is
+// and the corresponding Landlock unveil entries. To avoid polluting the host filesystem, a missing target is
 // only created automatically when it resolves inside the allocation directory
 // (task-private and cleaned up by Nomad). A missing target outside the alloc
 // directory is an error asking the operator to pre-create it.
@@ -739,10 +736,6 @@ func (p *Plugin) prepareMounts(cfg *drivers.TaskConfig) ([]shim.Mount, []string,
 // created only when it resolves inside the allocation directory; a missing
 // target outside the alloc directory returns an error so the driver never
 // creates files or directories on the shared host filesystem.
-//
-// Creation is performed through os.Root so that a symlink anywhere in the
-// target path cannot redirect a root-owned mkdir onto the host filesystem
-// (symlink-safe, and closes the check-then-create TOCTOU window).
 func ensureMountpoint(allocRoot, target string, sourceIsDir bool) error {
 	if _, err := os.Lstat(target); err == nil {
 		return nil // target already exists; bind mount will cover it
