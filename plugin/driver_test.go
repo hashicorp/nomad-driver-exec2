@@ -157,6 +157,14 @@ func TestFunctional_cases(t *testing.T) {
 		capDrop []string
 		workDir string // relative or absolute path; empty defaults to NOMAD_TASK_DIR
 
+		// volume mount config; when mount is true a temporary host source
+		// directory containing a "data.txt" file is created and bind-mounted to
+		// <task-dir-parent>/mnt. The command is set to read (or, with
+		// mountWrite, attempt to write) that file.
+		mount         bool
+		mountReadonly bool
+		mountWrite    bool
+
 		// plugin config
 		unveilDefaults bool
 		unveilByTask   bool
@@ -618,6 +626,39 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: true,
 			exp:            nil, // StartTask itself returns an error; no exit result
 		},
+		// a read-only host volume mount is created inside the alloc dir and the
+		// seeded file is readable through it
+		{
+			name:           "read-only volume mount is readable",
+			user:           "nomad-88000",
+			mount:          true,
+			mountReadonly:  true,
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`mounted-file-content`),
+		},
+		// writing through a read-only mount is rejected (rx-only Landlock unveil
+		// plus a read-only bind mount)
+		{
+			name:           "read-only volume mount rejects writes",
+			user:           "nomad-88001",
+			mount:          true,
+			mountReadonly:  true,
+			mountWrite:     true,
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 1},
+			stderrRe:       regexp.MustCompile(`(Permission denied|Read-only file system)`),
+		},
+		// a read-write volume mount allows writes
+		{
+			name:           "read-write volume mount allows writes",
+			user:           "nomad-88002",
+			mount:          true,
+			mountReadonly:  false,
+			mountWrite:     true,
+			unveilDefaults: true,
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
 	}
 
 	for _, tc := range cases {
@@ -652,6 +693,33 @@ func TestFunctional_cases(t *testing.T) {
 				CapAdd:  tc.capAdd,
 				CapDrop: tc.capDrop,
 				WorkDir: tc.workDir,
+			}
+
+			// set up a bind mount from a temporary host directory to a target
+			// inside the alloc dir (auto-created by the driver). The source is
+			// made world-writable so a dynamic-uid task can write through a
+			// read-write mount; a read-only mount must still reject writes.
+			if tc.mount {
+				src := t.TempDir()
+				must.NoError(t, os.WriteFile(filepath.Join(src, "data.txt"), []byte("mounted-file-content"), 0o644))
+				must.NoError(t, os.Chmod(src, 0o777))
+
+				dest := filepath.Join(filepath.Dir(task.Env["NOMAD_TASK_DIR"]), "mnt")
+				task.Mounts = []*drivers.MountConfig{{
+					HostPath: src,
+					TaskPath: dest,
+					Readonly: tc.mountReadonly,
+				}}
+
+				if tc.mountWrite {
+					// create a new file through the mount; succeeds on a
+					// read-write mount, fails with EROFS on a read-only one
+					taskConfig.Command = "touch"
+					taskConfig.Args = []string{filepath.Join(dest, "written.txt")}
+				} else {
+					taskConfig.Command = "cat"
+					taskConfig.Args = []string{filepath.Join(dest, "data.txt")}
+				}
 			}
 
 			must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))

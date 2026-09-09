@@ -282,6 +282,7 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		"unveil_defaults", opts.UnveilDefaults,
 		"oom_score_adj", opts.OOMScoreAdj,
 		"capabilities", opts.Capabilities,
+		"mounts", len(opts.Mounts),
 	)
 
 	// create the runner and start it
@@ -579,7 +580,7 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	if taskConfig.WorkDir != "" {
 		// alloc root is the grandparent of NOMAD_TASK_DIR:
 		// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
-		allocRoot := filepath.Dir(filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"]))
+		allocRoot := allocRootOf(driverTaskConfig)
 		if err := childEscapesParentDir(allocRoot, taskConfig.WorkDir); err != nil {
 			if !p.config.UnveilByTask {
 				return nil, fmt.Errorf("task set work_dir outside sandbox but driver config does not allow this")
@@ -596,6 +597,14 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		// append the user specified unveil paths from task.config.unveil
 		unveil = append(unveil, taskConfig.Unveil...)
 	}
+
+	// Translate Nomad host/CSI volume mounts into bind mounts inside the task mount namespace.
+	// Each mount target is auto-unveiled so it is reachable under Landlock.
+	mounts, mountUnveil, err := p.prepareMounts(driverTaskConfig)
+	if err != nil {
+		return nil, err
+	}
+	unveil = append(unveil, mountUnveil...)
 
 	// Compute the effective capability set:
 	//   1. start with cap_add (normalized)
@@ -624,6 +633,7 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		OOMScoreAdj:    taskConfig.OOMScoreAdj,
 		Capabilities:   effectiveCaps.Slice(),
 		WorkDir:        taskConfig.WorkDir,
+		Mounts:         mounts,
 	}, nil
 }
 
@@ -650,4 +660,130 @@ func childEscapesParentDir(parent, child string) error {
 		return err
 	}
 	return nil
+}
+
+// Nomad volume mount propagation modes
+// allocRootOf returns the allocation root directory for a task
+func allocRootOf(cfg *drivers.TaskConfig) string {
+	return filepath.Dir(filepath.Dir(cfg.Env["NOMAD_TASK_DIR"]))
+}
+
+// prepareMounts converts Nomad's host/CSI volume mounts into shim bind mounts
+// and the corresponding Landlock unveil entries. Because exec2 tasks share the
+// host root filesystem inside a slave-propagated mount namespace, a mount
+// target resolves against the host root; the mountpoint must therefore exist
+// before the bind. To avoid polluting the host filesystem, a missing target is
+// only created automatically when it resolves inside the allocation directory
+// (task-private and cleaned up by Nomad). A missing target outside the alloc
+// directory is an error asking the operator to pre-create it.
+func (p *Plugin) prepareMounts(cfg *drivers.TaskConfig) ([]shim.Mount, []string, error) {
+	if len(cfg.Mounts) == 0 {
+		return nil, nil, nil
+	}
+
+	// alloc root is the grandparent of NOMAD_TASK_DIR:
+	// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
+	allocRoot := allocRootOf(cfg)
+
+	var (
+		mounts []shim.Mount
+		unveil []string
+	)
+
+	for _, m := range cfg.Mounts {
+		if m.HostPath == "" || m.TaskPath == "" {
+			return nil, nil, fmt.Errorf("mount requires both a host path and a task path")
+		}
+
+		// exec2 only provides the one-way (host-to-task) propagation of its
+		// slave-propagated mount namespace and cannot relabel SELinux contexts
+		// on the host-shared filesystem. Reject any unsupported mount option
+		// with a single message instead of silently ignoring it.
+		switch {
+		case m.PropagationMode != "" && m.PropagationMode != "private" && m.PropagationMode != "host-to-task":
+			return nil, nil, fmt.Errorf(
+				"mount %q uses propagation mode %q, which exec2 does not support", m.TaskPath, m.PropagationMode)
+		case m.SELinuxLabel != "":
+			return nil, nil, fmt.Errorf(
+				"mount %q sets SELinux label %q, which exec2 does not support", m.TaskPath, m.SELinuxLabel)
+		}
+
+		source, err := os.Stat(m.HostPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("mount source %q: %w", m.HostPath, err)
+		}
+
+		if err := ensureMountpoint(allocRoot, m.TaskPath, source.IsDir()); err != nil {
+			return nil, nil, err
+		}
+
+		mounts = append(mounts, shim.Mount{
+			Source:   m.HostPath,
+			Target:   m.TaskPath,
+			Readonly: m.Readonly,
+		})
+
+		// grant the task access to the mount target under Landlock; read-only
+		// mounts only need read+execute, read-write mounts need full access.
+		mode := "rwxc:"
+		if m.Readonly {
+			mode = "rx:"
+		}
+		unveil = append(unveil, mode+m.TaskPath)
+	}
+
+	return mounts, unveil, nil
+}
+
+// ensureMountpoint makes sure the bind mount target exists. A missing target is
+// created only when it resolves inside the allocation directory; a missing
+// target outside the alloc directory returns an error so the driver never
+// creates files or directories on the shared host filesystem.
+//
+// Creation is performed through os.Root so that a symlink anywhere in the
+// target path cannot redirect a root-owned mkdir onto the host filesystem
+// (symlink-safe, and closes the check-then-create TOCTOU window).
+func ensureMountpoint(allocRoot, target string, sourceIsDir bool) error {
+	if _, err := os.Lstat(target); err == nil {
+		return nil // target already exists; bind mount will cover it
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("mount target %q: %w", target, err)
+	}
+
+	// target is missing: only create it when it lives inside the alloc dir
+	if err := childEscapesParentDir(allocRoot, target); err != nil {
+		return fmt.Errorf(
+			"mount target %q does not exist and is outside the allocation directory; create it on the host first",
+			target)
+	}
+
+	root, err := os.OpenRoot(allocRoot)
+	if err != nil {
+		return fmt.Errorf("opening alloc root %q: %w", allocRoot, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	// operate on a path relative to the alloc root so os.Root can enforce the
+	// boundary on every path component
+	rel, err := filepath.Rel(allocRoot, target)
+	if err != nil {
+		return fmt.Errorf("resolving mount target %q: %w", target, err)
+	}
+
+	// a directory source needs a directory mountpoint; a file source needs an
+	// empty file (with its parent directory) to bind over
+	if sourceIsDir {
+		if err := root.MkdirAll(rel, 0o755); err != nil {
+			return fmt.Errorf("creating mount target %q: %w", target, err)
+		}
+		return nil
+	}
+	if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+		return fmt.Errorf("creating mount target parent for %q: %w", target, err)
+	}
+	f, err := root.OpenFile(rel, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("creating mount target file %q: %w", target, err)
+	}
+	return f.Close()
 }
