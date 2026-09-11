@@ -367,38 +367,33 @@ func self() string {
 }
 
 // writeShimConfig serializes all shim startup parameters into a JSON config
-// file at <NOMAD_TASK_DIR>/.shim_config.json and returns its path.
-// The file is written into NOMAD_TASK_DIR (the "local/" subdirectory) rather
-// than TaskDir (the parent) so it is co-located with .exit_status.txt and
-// accessible to tasks via ${NOMAD_TASK_DIR}/.shim_config.json.
-// The path is also appended as an "r:" unveil entry so Landlock permits the
-// shim to read it before the sandbox is engaged.
+// file in the task directory and returns its path.
 //
-// All file operations (write, rename, chown) are performed through an
-// os.Root opened on taskDir so that symlinks cannot redirect them outside
-// the task directory — the same pattern used by fixpipe.
+// The file is written into TaskDir (the parent of NOMAD_TASK_DIR) rather than
+// NOMAD_TASK_DIR itself so that it falls outside every Landlock unveil entry:
+// the task process cannot read the shim's launch parameters. The shim reads the
+// file as root before it drops privileges and engages the sandbox, so it needs
+// no unveil entry of its own and the file stays root-owned with 0o600
+// permissions.
+//
+// File operations are performed through an os.Root opened on TaskDir so that
+// symlinks cannot redirect them outside the task directory.
 func (e *exe) writeShimConfig(uid, gid int) (string, error) {
-	taskDir := e.env.Env["NOMAD_TASK_DIR"]
+	taskDir := e.env.TaskDir
 	if taskDir == "" {
-		return "", fmt.Errorf("NOMAD_TASK_DIR is not set in task environment")
+		return "", fmt.Errorf("task directory is not set")
 	}
 
 	const name = ".shim_config.json"
 	path := filepath.Join(taskDir, name)
 
 	// Open the task directory as a root so every subsequent operation is
-	// confined to it — mirrors the fixpipe / openpipe pattern.
+	// confined to it.
 	root, err := os.OpenRoot(taskDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to open task dir for shim config: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-
-	// copy unveil paths into a new slice to avoid mutating the shared
-	// Options.UnveilPaths backing array, then add the config file itself
-	unveilPaths := make([]string, len(e.opts.UnveilPaths), len(e.opts.UnveilPaths)+1)
-	copy(unveilPaths, e.opts.UnveilPaths)
-	unveilPaths = append(unveilPaths, "r:"+path)
 
 	cfg := &ShimConfig{
 		Version:        configVersion,
@@ -408,22 +403,13 @@ func (e *exe) writeShimConfig(uid, gid int) (string, error) {
 		UID:            uid,
 		GID:            gid,
 		Capabilities:   e.opts.Capabilities,
-		UnveilPaths:    unveilPaths,
+		UnveilPaths:    e.opts.UnveilPaths,
 		Command:        e.opts.Command,
 		Arguments:      e.opts.Arguments,
 	}
 
-	if err := WriteShimConfig(root, name, cfg); err != nil {
+	if err := cfg.write(root, name); err != nil {
 		return "", err
-	}
-
-	// chown the config file to the task user so the task process can read it;
-	// the file stays 0o600 so other users on the host cannot access it.
-	// root.Chown uses the basename inside the root rather than a bare
-	// os.Chown so a pre-placed symlink in taskDir cannot redirect the
-	// ownership change outside the allocation directory.
-	if err := root.Chown(name, uid, gid); err != nil {
-		return "", fmt.Errorf("failed to chown shim config: %w", err)
 	}
 
 	return path, nil
@@ -455,10 +441,10 @@ func (e *exe) parameters(configPath string) []string {
 		"--fork",
 		"--kill-child=SIGKILL",
 		"--",
+		self(),
+		SubCommand,
+		configPath,
 	)
-
-	// craft complete result
-	result = append(result, self(), SubCommand, configPath)
 
 	return result
 }

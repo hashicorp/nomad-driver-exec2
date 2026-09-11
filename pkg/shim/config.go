@@ -49,13 +49,12 @@ type ShimConfig struct {
 	Arguments []string `json:"arguments"`
 }
 
-// WriteShimConfig marshals cfg as JSON and atomically writes it to dir/name.
+// write marshals the config as JSON and atomically writes it to dir/name.
 // All file operations are performed through dir (an os.Root) so that symlinks
-// cannot redirect the write or rename outside the task directory — the same
-// pattern used by fixpipe and openpipe elsewhere in this package.
+// cannot redirect the write or rename outside the task directory.
 // The data is first written to name+".tmp" then renamed into place,
 // so the shim never reads a partially-written file.
-func WriteShimConfig(dir *os.Root, name string, cfg *ShimConfig) error {
+func (cfg *ShimConfig) write(dir *os.Root, name string) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("exec2: marshal shim config: %w", err)
@@ -90,10 +89,10 @@ func WriteShimConfig(dir *os.Root, name string, cfg *ShimConfig) error {
 	return nil
 }
 
-// ReadShimConfig reads and unmarshals a ShimConfig from path.
+// readShimConfig reads and unmarshals a ShimConfig from path.
 // The returned error wraps fs.ErrNotExist when the file is absent, so callers
 // can distinguish "file not found" from a corrupt or malformed config.
-func ReadShimConfig(path string) (*ShimConfig, error) {
+func readShimConfig(path string) (*ShimConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("exec2: read shim config: %w", err)

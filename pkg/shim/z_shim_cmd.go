@@ -78,7 +78,7 @@ func init() {
 			return ExitWrongArgs
 		}
 
-		cfg, err := ReadShimConfig(os.Args[2])
+		cfg, err := readShimConfig(os.Args[2])
 		if err != nil {
 			subproc.Print("failed to read shim config %q: %v", os.Args[2], err)
 			return ExitBadConfig
