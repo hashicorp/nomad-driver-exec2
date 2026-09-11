@@ -662,7 +662,6 @@ func childEscapesParentDir(parent, child string) error {
 	return nil
 }
 
-// Nomad volume mount propagation modes
 // allocRootOf returns the allocation root directory for a task
 func allocRootOf(cfg *drivers.TaskConfig) string {
 	return filepath.Dir(filepath.Dir(cfg.Env["NOMAD_TASK_DIR"]))
