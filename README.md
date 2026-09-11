@@ -25,21 +25,21 @@ and therefore cannot be supported.
 
 `exec2` is the right choice when:
 
-- You want to run an **ordinary Linux process** (a binary, a script, a JVM
+- You want to run an ordinary Linux process (a binary, a script, a JVM
   program, a Python service) directly on the Nomad client without a container
   runtime.
-- You need **fast startup times** and minimal overhead — `exec2` starts tasks
+- You need fast startup times and minimal overhead. `exec2` starts tasks
   in microseconds with no image pull or container shim in the path.
 - You want stronger isolation than `raw_exec` provides. `exec2` uses Landlock
   for filesystem isolation and cgroups v2 for resource limits, giving you a
   meaningful security boundary without the full weight of a container.
 - Your binary or runtime is already installed on the Nomad node (or delivered
-  via a Nomad artifact / template block).
+  via a Nomad artifact or template block).
 
-`exec2` is **not** the right choice when:
+`exec2` is not the right choice when:
 
 - Your workload requires OCI image distribution or a container-level network
-  namespace — use the `docker` or `podman` drivers instead.
+  namespace. Use the `docker` or `podman` drivers instead.
 - The node does not have Landlock enabled (e.g. RHEL without a custom kernel).
 
 ### Simple Example

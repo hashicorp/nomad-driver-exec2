@@ -3,7 +3,7 @@
 
 # Run a shell script placed by a template block.
 # command must be an absolute path; task CWD is ${NOMAD_TASK_DIR}.
-# unveil = ["rx:..."] is required in addition to perms = "555" — Landlock
+# unveil = ["rx:..."] is required in addition to perms = "555". Landlock
 # blocks execution unless the execute bit is explicitly granted.
 
 job "script" {

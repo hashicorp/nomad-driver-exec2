@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # Bind a privileged port without running as root using an ambient capability.
-# net_bind_service is in the default allow_caps list — no extra plugin config needed.
+# net_bind_service is in the default allow_caps list, so no extra plugin config is needed.
 # Requires unveil_by_task = true in plugin config for the unveil field to take effect.
 
 job "cap-net-bind-service" {

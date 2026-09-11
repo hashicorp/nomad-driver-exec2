@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # Access a host path from inside an exec2 task.
-# Landlock blocks the path even with POSIX permission — unveil is required.
+# Landlock blocks the path even with POSIX permission, so unveil is required.
 # Host mounts are correctly propagated into the task namespace.
 # /tmp/data must exist on the host before the job is submitted:
 #   mkdir -p /tmp/data && echo "hello from host" > /tmp/data/test.txt
