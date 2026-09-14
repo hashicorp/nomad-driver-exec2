@@ -29,17 +29,17 @@ and therefore cannot be supported.
   program, a Python service) directly on the Nomad client without a container
   runtime.
 - You need fast startup times and minimal overhead. `exec2` starts tasks
-  in microseconds with no image pull or container shim in the path.
+  in microseconds with no image pull.
 - You want stronger isolation than `raw_exec` provides. `exec2` uses Landlock
-  for filesystem isolation and cgroups v2 for resource limits, giving you a
-  meaningful security boundary without the full weight of a container.
+  for filesystem isolation, Linux namespaces to isolate the task, and cgroups v2
+  for resource limits, giving a meaningful security boundary.
 - Your binary or runtime is already installed on the Nomad node (or delivered
   via a Nomad artifact or template block).
 
 `exec2` is not the right choice when:
 
-- Your workload requires OCI image distribution or a container-level network
-  namespace. Use the `docker` or `podman` drivers instead.
+- Your workload is distributed as an OCI/container image. Use the `docker` or
+  `podman` drivers instead.
 - The node does not have Landlock enabled (e.g. RHEL without a custom kernel).
 
 ### Simple Example
