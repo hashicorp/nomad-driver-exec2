@@ -6,6 +6,7 @@ go 1.26
 replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
 
 require (
+	github.com/creack/pty v1.1.24
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-set/v2 v2.1.0
 	github.com/hashicorp/nomad v1.11.3
