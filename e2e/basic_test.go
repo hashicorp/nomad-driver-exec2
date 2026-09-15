@@ -418,6 +418,18 @@ func TestBasic_OomScoreAdj(t *testing.T) {
 	must.Eq(t, "500", strings.TrimSuffix(string(oomScore), "\n"))
 }
 
+func TestBasic_HostVolume(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "host_volume")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/host_volume.hcl")
+	wait(t, ctx, "host_volume")
+
+	// the task cat'd a file seeded into the mounted read-only host volume
+	logs := logs2(t, ctx, "host_volume", "task")
+	must.StrContains(t, logs, "hello from host volume")
+}
+
 func TestBasic_CapAdd(t *testing.T) {
 	ctx := setup(t)
 	defer purge(t, ctx, "cap_add")()

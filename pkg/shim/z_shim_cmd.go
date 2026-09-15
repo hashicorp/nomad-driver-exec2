@@ -4,6 +4,7 @@
 package shim
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,8 +66,9 @@ const (
 // 5. <uid>            <- numeric user id for the task process
 // 6. <gid>            <- numeric group id for the task process
 // 7. cap,cap,...      <- comma-separated ambient capability names (empty string if none)
-// 8. [mode:path, ...] <- list of additional unveil paths
-// 9. --               <- sentinel between following commands
+// 8. [{...}, ...]     <- JSON-encoded array of bind mounts ("[]" if none)
+// 9. [mode:path, ...] <- list of additional unveil paths
+// 10. --              <- sentinel between following commands
 func init() {
 	subproc.Do(SubCommand, func() int {
 		// we need to ignore the stop signal (which is sent to the entire
@@ -78,7 +80,7 @@ func init() {
 			<-sigs // do nothing; stay alive
 		}()
 
-		if n := len(os.Args); n <= 7 {
+		if n := len(os.Args); n <= 8 {
 			subproc.Print("failed to invoke exec2-shim with sufficient args: %d", n)
 			return ExitWrongArgs
 		}
@@ -97,13 +99,25 @@ func init() {
 			return ExitWrongArgs
 		}
 		capsArg := os.Args[7]
+		mountsArg := os.Args[8]
 
 		// get the unveil paths and the rest of the command(s) to run
-		// from our command arguments (after uid, gid, and caps args)
-		args := os.Args[8:]
+		// from our command arguments (after uid, gid, caps, and mounts args)
+		args := os.Args[9:]
 		paths, commands := split(args)
 		paths = append(paths, "w:"+outPipePath)
 		paths = append(paths, "w:"+errPipePath)
+
+		// decode the bind mounts and establish them inside the mount namespace.
+		mounts, err := unmarshalMounts(mountsArg)
+		if err != nil {
+			subproc.Print("failed to decode mounts: %v", err)
+			return ExitWrongArgs
+		}
+		if err := setupMounts(mounts); err != nil {
+			subproc.Print("failed to set up mounts: %v", err)
+			return subproc.ExitFailure
+		}
 
 		// resolve capability names to kernel integers before calling dropPrivileges;
 		// this is a pure string-to-integer mapping that requires no privileges
@@ -187,6 +201,35 @@ func init() {
 		_ = os.WriteFile(destination, []byte(strconv.Itoa(code)), 0o644)
 		return code
 	})
+}
+
+// unmarshalMounts decodes the JSON mounts argument produced by marshalMounts.
+func unmarshalMounts(arg string) ([]Mount, error) {
+	var mounts []Mount
+	if err := json.Unmarshal([]byte(arg), &mounts); err != nil {
+		return nil, fmt.Errorf("invalid mounts argument: %w", err)
+	}
+	return mounts, nil
+}
+
+// setupMounts establishes each bind mount inside the task's private mount
+// namespace.
+//
+// A single bind mount cannot be created read-only atomically, so read-only
+// mounts are established as a normal bind and then remounted read-only.
+func setupMounts(mounts []Mount) error {
+	for _, m := range mounts {
+		if err := unix.Mount(m.Source, m.Target, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+			return fmt.Errorf("bind mount %q -> %q: %w", m.Source, m.Target, err)
+		}
+		if m.Readonly {
+			const roFlags = unix.MS_REMOUNT | unix.MS_BIND | unix.MS_RDONLY | unix.MS_REC
+			if err := unix.Mount("", m.Target, "", roFlags, ""); err != nil {
+				return fmt.Errorf("remount read-only %q: %w", m.Target, err)
+			}
+		}
+	}
+	return nil
 }
 
 // dropPrivileges conditionally drops uid/gid and adds the given capabilities

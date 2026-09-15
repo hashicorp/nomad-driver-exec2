@@ -21,6 +21,11 @@ client {
   options = {
     "fingerprint.denylist" = "env_aws,env_gce,env_azure,env_digitalocean"
   }
+
+  # host volume used by the e2e volume-mount test
+  host_volume "exec2-e2e-volume" {
+    path = "/tmp/exec2-e2e-volume"
+  }
 }
 
 plugin "nomad-driver-exec2" {

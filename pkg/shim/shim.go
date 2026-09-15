@@ -6,6 +6,7 @@ package shim
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -33,7 +34,16 @@ type Options struct {
 	UnveilDefaults bool
 	OOMScoreAdj    int
 	Capabilities   []string
-	WorkDir        string // working directory for the task; defaults to TaskDir
+	WorkDir        string  // working directory for the task; defaults to TaskDir
+	Mounts         []Mount // bind mounts to set up inside the task mount namespace
+}
+
+// Mount describes a single bind mount to establish inside the task's private mount namespace before the task command is executed.
+// Source is the host path and Target is the path as seen by the task.
+type Mount struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	Readonly bool   `json:"readonly"`
 }
 
 // Environment represents runtime configuration.
@@ -410,6 +420,9 @@ func (e *exe) parameters(uid, gid int) []string {
 	result = append(result, strconv.Itoa(gid))
 	// pass capability names as a comma-separated string; empty means no caps
 	result = append(result, strings.Join(e.opts.Capabilities, ","))
+	// pass bind mounts as a single JSON-encoded argument (always present, even
+	// as "null"/"[]") so the positional index of the unveil paths stays stable
+	result = append(result, marshalMounts(e.opts.Mounts))
 	result = append(result, e.opts.UnveilPaths...)
 	result = append(result, "--")
 
@@ -421,6 +434,12 @@ func (e *exe) parameters(uid, gid int) []string {
 
 	// craft complete result
 	return result
+}
+
+// marshalMounts encodes the bind mount list as a single JSON argument
+func marshalMounts(mounts []Mount) string {
+	b, _ := json.Marshal(mounts)
+	return string(b)
 }
 
 // create an exec.Cmd to run our process tree
