@@ -3,14 +3,30 @@
 
 version: 2
 updates:
-  - package-ecosystem: gomod
-    directory: "/"
-    labels:
-      - "dependencies"
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
     schedule:
       interval: "weekly"
       day: "sunday"
+      time: "09:00"
+    labels:
+      - "theme/dependencies"
     groups:
       go:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: /
+    labels:
+      - "theme/dependencies"
+      - "theme/ci"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+    groups:
+      actions:
         patterns:
           - "*"
