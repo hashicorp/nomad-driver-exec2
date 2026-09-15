@@ -18,10 +18,6 @@ type ShimConfig struct {
 	// Version identifies the config format. Always set to configVersion (1).
 	Version int `json:"version"`
 
-	// UnveilDefaults controls whether the shim should enable the default
-	// Landlock unveil paths (task dir, alloc dir, etc.).
-	UnveilDefaults bool `json:"unveil_defaults"`
-
 	// OutPipe is the filesystem path to the named pipe for task stdout.
 	OutPipe string `json:"out_pipe"`
 
@@ -38,8 +34,10 @@ type ShimConfig struct {
 	// capabilities for the task process. Empty means no extra capabilities.
 	Capabilities []string `json:"capabilities"`
 
-	// UnveilPaths is the list of additional Landlock filesystem paths to expose,
-	// in "mode:path" format (e.g. "r:/some/path", "rwxc:/alloc/data").
+	// UnveilPaths is the complete list of Landlock entries to expose.
+	// Each entry is either a "mode:path" pair (e.g. "r:/some/path", "rwxc:/alloc/data")
+	// or a bundle token (e.g. UnveilShared, UnveilCerts) that the shim expands
+	// to a go-landlock path set.
 	UnveilPaths []string `json:"unveil_paths"`
 
 	// Command is the executable to run as the task process.

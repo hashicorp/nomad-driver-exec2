@@ -28,13 +28,12 @@ import (
 
 // Options represent Task configuration options.
 type Options struct {
-	Command        string
-	Arguments      []string
-	UnveilPaths    []string
-	UnveilDefaults bool
-	OOMScoreAdj    int
-	Capabilities   []string
-	WorkDir        string // working directory for the task; defaults to TaskDir
+	Command      string
+	Arguments    []string
+	UnveilPaths  []string
+	OOMScoreAdj  int
+	Capabilities []string
+	WorkDir      string // working directory for the task; defaults to TaskDir
 }
 
 // Environment represents runtime configuration.
@@ -396,16 +395,15 @@ func (e *exe) writeShimConfig(uid, gid int) (string, error) {
 	defer func() { _ = root.Close() }()
 
 	cfg := &ShimConfig{
-		Version:        configVersion,
-		UnveilDefaults: e.opts.UnveilDefaults,
-		OutPipe:        e.env.OutPipe,
-		ErrPipe:        e.env.ErrPipe,
-		UID:            uid,
-		GID:            gid,
-		Capabilities:   e.opts.Capabilities,
-		UnveilPaths:    e.opts.UnveilPaths,
-		Command:        e.opts.Command,
-		Arguments:      e.opts.Arguments,
+		Version:      configVersion,
+		OutPipe:      e.env.OutPipe,
+		ErrPipe:      e.env.ErrPipe,
+		UID:          uid,
+		GID:          gid,
+		Capabilities: e.opts.Capabilities,
+		UnveilPaths:  e.opts.UnveilPaths,
+		Command:      e.opts.Command,
+		Arguments:    e.opts.Arguments,
 	}
 
 	if err := cfg.write(root, name); err != nil {

@@ -11,27 +11,21 @@ import (
 	"github.com/shoenig/go-landlock"
 )
 
-func lockdown(defaults bool, elements []string) error {
+// Bundle tokens name go-landlock's built-in path sets. Each expands to an
+// environment-specific set of paths that go-landlock resolves when the sandbox
+// is applied. They travel in the unveil list as opaque strings so the driver 
+// can include them without depending on go-landlock.
+const (
+	UnveilShared = "@shared" // shared libraries ( /lib, /usr/lib, ...)
+	UnveilStdio  = "@stdio"  // standard I/O devices (/dev/null, /dev/zero, ...)
+	UnveilDNS    = "@dns"    // name resolution files (/etc/resolv.conf, ...)
+	UnveilCerts  = "@certs"  // TLS trust store (/etc/ssl/certs, ...)
+)
+
+func lockdown(elements []string) error {
 	paths, err := convert(elements)
 	if err != nil {
 		return err
-	}
-
-	if defaults {
-		paths = append(paths, landlock.Shared())
-		paths = append(paths, landlock.Stdio())
-		paths = append(paths, landlock.DNS())
-		paths = append(paths, landlock.Certs())
-		paths = append(paths,
-			landlock.Dir("/bin", "rx"),
-			landlock.Dir("/usr/bin", "rx"),
-			landlock.Dir("/usr/local/bin", "rx"),
-		)
-		// expose /proc read-only so runtimes (Go 1.25+, JVM, dotnet) can read
-		// /proc/self/cgroup and /proc/self/mountinfo to discover their cgroup
-		// CPU and memory limits. unshare --mount-proc creates 
-		// an isolated /proc scoped to the task's PID namespace.
-		paths = append(paths, landlock.Dir("/proc", "r"))
 	}
 
 	return landlock.New(paths...).Lock(landlock.Mandatory)
@@ -40,14 +34,20 @@ func lockdown(defaults bool, elements []string) error {
 func convert(elements []string) ([]*landlock.Path, error) {
 	paths := make([]*landlock.Path, 0, len(elements))
 
-	for _, path := range elements {
-		idx := strings.LastIndex(path, ":")
-		if idx == -1 {
-			return nil, fmt.Errorf("path %q does not contain mode prefix", path)
+	for _, elem := range elements {
+		// bundle tokens name a go-landlock path set and carry no mode prefix
+		if bundle, ok := landlockBundle(elem); ok {
+			paths = append(paths, bundle)
+			continue
 		}
 
-		mode := path[0:idx]
-		filepath := path[idx+1:]
+		idx := strings.LastIndex(elem, ":")
+		if idx == -1 {
+			return nil, fmt.Errorf("path %q does not contain mode prefix", elem)
+		}
+
+		mode := elem[0:idx]
+		filepath := elem[idx+1:]
 
 		info, err := os.Stat(filepath)
 		if err != nil {
@@ -62,4 +62,20 @@ func convert(elements []string) ([]*landlock.Path, error) {
 	}
 
 	return paths, nil
+}
+
+// landlockBundle maps a bundle token to its go-landlock path set.
+func landlockBundle(token string) (*landlock.Path, bool) {
+	switch token {
+	case UnveilShared:
+		return landlock.Shared(), true
+	case UnveilStdio:
+		return landlock.Stdio(), true
+	case UnveilDNS:
+		return landlock.DNS(), true
+	case UnveilCerts:
+		return landlock.Certs(), true
+	default:
+		return nil, false
+	}
 }

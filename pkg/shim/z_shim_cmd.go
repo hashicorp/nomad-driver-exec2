@@ -126,7 +126,7 @@ func init() {
 
 		// use landlock to isolate this process and child processes to the
 		// set of given filepaths
-		if err := lockdown(cfg.UnveilDefaults, paths); err != nil {
+		if err := lockdown(paths); err != nil {
 			debug("unable to lockdown: %v", err)
 			return subproc.ExitFailure
 		}
