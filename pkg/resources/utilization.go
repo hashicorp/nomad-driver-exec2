@@ -18,6 +18,7 @@ type Utilization struct {
 	Memory uint64
 	Swap   uint64
 	Cache  uint64
+	RSS    uint64
 
 	System          Percent
 	User            Percent

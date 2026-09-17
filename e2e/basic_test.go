@@ -417,3 +417,30 @@ func TestBasic_OomScoreAdj(t *testing.T) {
 
 	must.Eq(t, "500", strings.TrimSuffix(string(oomScore), "\n"))
 }
+
+func TestBasic_CapAdd(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "cap_add")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/cap_add.hcl")
+	wait(t, ctx, "cap_add")
+
+	output := logs2(t, ctx, "cap_add", "cat")
+	// CapAmb line should be present with a non-zero hex value
+	capAmbRe := regexp.MustCompile(`CapAmb:\s+[0-9a-f]*[1-9a-f][0-9a-f]*`)
+	must.RegexMatch(t, capAmbRe, output)
+}
+
+func TestBasic_WorkDir(t *testing.T) {
+	ctx := setup(t)
+	defer purge(t, ctx, "work_dir")()
+
+	_ = run(t, ctx, "nomad", "job", "run", "./jobs/work_dir.hcl")
+	wait(t, ctx, "work_dir")
+
+	// pwd should print the alloc dir path which contains the alloc ID
+	statusOutput := run(t, ctx, "nomad", "job", "status", "work_dir")
+	alloc := allocFromJobStatus(t, statusOutput)
+	output := logs2(t, ctx, "work_dir", "pwd")
+	must.StrContains(t, output, alloc)
+}

@@ -22,6 +22,11 @@ const (
 	UnveilCerts  = "@certs"  // TLS trust store (/etc/ssl/certs, ...)
 )
 
+// isProcSelfPath reports whether path is a descendant of /proc/self or /proc/thread-self 
+func isProcSelfPath(path string) bool {
+	return strings.HasPrefix(path, "/proc/self/") || strings.HasPrefix(path, "/proc/thread-self/")
+}
+
 func lockdown(elements []string) error {
 	paths, err := convert(elements)
 	if err != nil {
@@ -48,6 +53,18 @@ func convert(elements []string) ([]*landlock.Path, error) {
 
 		mode := elem[0:idx]
 		filepath := elem[idx+1:]
+
+		// /proc/self/* and /proc/thread-self/* contain PID-scoped magic symlinks.
+		// go-landlock registers rules via O_PATH which pins the inode at the
+		// time of the open — resolving /proc/self to /proc/<shim-pid>. After
+		// unshare --mount-proc the task's private /proc has different inodes,
+		// making the pinned inode unreachable (EPERM). Promote these paths to
+		// Dir("/proc", mode) so the rule covers the whole /proc tree by its
+		// stable directory inode instead.
+		if isProcSelfPath(filepath) {
+			paths = append(paths, landlock.Dir("/proc", mode))
+			continue
+		}
 
 		info, err := os.Stat(filepath)
 		if err != nil {

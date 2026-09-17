@@ -327,21 +327,21 @@ func TestFunctional_cases(t *testing.T) {
 			user:           "nomad-80000",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "run 'env' as nobody without default paths",
 			user:           "nobody",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "run 'env' as root without default paths",
 			user:           "root",
 			command:        "/usr/bin/env",
 			unveilDefaults: false,
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		// write to task directory
 		{
@@ -379,7 +379,7 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: false,
 			unveilPaths:    []string{"r:/etc/hosts"},
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_TASK_DIR}"},
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "write to alloc directory no defaults",
@@ -388,7 +388,7 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: false,
 			unveilPaths:    []string{"r:/etc/hosts"},
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_ALLOC_DIR}"},
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		{
 			name:           "write to secrets directory no defaults",
@@ -397,7 +397,7 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: false,
 			unveilPaths:    []string{"r:/etc/hosts"},
 			args:           []string{"-c", "cp /etc/hosts ${NOMAD_SECRETS_DIR}"},
-			exp:            &drivers.ExitResult{ExitCode: 2},
+			exp:            &drivers.ExitResult{ExitCode: 1},
 		},
 		// dyanmic id
 		{
@@ -557,6 +557,56 @@ func TestFunctional_cases(t *testing.T) {
 			unveilDefaults: true,
 			unveilByTask:   false, // no gate needed — inside sandbox
 			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// /proc/self/mountinfo via explicit task unveil
+		// convert() detects /proc/self/* via isProcSelfPath and promotes the entry to Dir("/proc","r")
+		{
+			name:           "read /proc/self/mountinfo via task unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/self/mountinfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc/self/mountinfo"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`\d+ \d+ \d+:\d+`), // mountinfo line format
+		},
+		// /proc/cpuinfo via explicit task unveil
+		// IsDir=false → File("/proc/cpuinfo","r") emitted directly.
+		{
+			name:           "read /proc/cpuinfo via task unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/cpuinfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc/cpuinfo"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`.+`),
+		},
+		// Multiple specific /proc paths together — mirrors the exact DSE jobspec.
+		{
+			name:           "read multiple /proc paths via task unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/self/mountinfo && head -1 /proc/cpuinfo && head -1 /proc/meminfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc/self/mountinfo", "r:/proc/cpuinfo", "r:/proc/meminfo"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+		},
+		// /proc root via task unveil — directory form. os.Stat("/proc") succeeds
+		// and IsDir=true so Dir("/proc","r") is emitted; all sub-paths accessible.
+		{
+			name:           "read /proc/self/mountinfo via /proc root unveil",
+			user:           "nomad-87000",
+			command:        "sh",
+			args:           []string{"-c", "head -1 /proc/self/mountinfo && head -1 /proc/cpuinfo"},
+			unveilDefaults: true,
+			unveilByTask:   true,
+			unveil:         []string{"r:/proc"},
+			exp:            &drivers.ExitResult{ExitCode: 0},
+			stdoutRe:       regexp.MustCompile(`\d+ \d+ \d+:\d+`),
 		},
 		// work_dir outside sandbox without unveil_by_task — must be rejected
 		{
@@ -820,4 +870,72 @@ func TestFunctional_cap_add_not_allowed(t *testing.T) {
 	_, _, err := harness.StartTask(task)
 	must.Error(t, err)
 	must.StrContains(t, err.Error(), "net_bind_service")
+}
+
+// TestFunctional_TaskStats_RSS verifies that RSS is reported as a non-zero value
+// in the MemoryStats of a running task, and that "RSS" is included in Measured.
+// RSS is derived from the "anon" field of the cgroup memory.stat file.
+func TestFunctional_TaskStats_RSS(t *testing.T) {
+	ctests.RequireRoot(t)
+	ci.Parallel(t)
+
+	pluginConfig := &Config{
+		UnveilDefaults: true,
+	}
+
+	taskConfig := &TaskConfig{
+		Command: "sleep",
+		Args:    []string{"infinity"},
+	}
+
+	allocID := uuid.Generate()
+	taskName := "test_rss_stats_" + uuid.Short()
+
+	task := &drivers.TaskConfig{
+		User:      "nomad-80000",
+		ID:        uuid.Generate(),
+		Name:      taskName,
+		AllocID:   allocID,
+		Resources: basicResources(allocID, taskName),
+	}
+
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskConfig))
+
+	harness := newTestHarness(t, pluginConfig)
+	harness.MakeTaskCgroup(task.AllocID, task.Name)
+	t.Cleanup(harness.MkAllocDir(task, true))
+
+	_, _, err := harness.StartTask(task)
+	must.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = harness.DestroyTask(task.ID, true)
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	// TaskStats emits on the given interval; the first emission populates cgroup
+	// memory.stat values. 200ms is fast enough to not slow the test suite.
+	statsCh, err := harness.TaskStats(ctx, task.ID, 200*time.Millisecond)
+	must.NoError(t, err)
+
+	select {
+	case usage := <-statsCh:
+		must.NotNil(t, usage)
+		must.NotNil(t, usage.ResourceUsage)
+
+		mem := usage.ResourceUsage.MemoryStats
+		must.NotNil(t, mem)
+
+		// RSS must be non-zero — a running process always has anonymous memory
+		// (stack at minimum). It is sourced from the "anon" field in memory.stat.
+		must.Positive(t, mem.RSS)
+
+		// "RSS" must be declared in Measured so Nomad surfaces it in the UI/API
+		must.SliceContainsAll(t, mem.Measured, []string{"RSS", "Cache", "Swap", "Usage"})
+
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for task stats")
+	}
 }
