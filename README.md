@@ -101,6 +101,61 @@ getting access inside the task and allocation directories created for the task.
 To make use of a dynamic workload user, simply leave the `user` field blank
 in the task definition of an `exec2` task.
 
+##### volume mounts
+
+The `exec2` driver supports Nomad [host](https://developer.hashicorp.com/nomad/docs/job-specification/volume)
+and CSI volumes. Declare a `volume` in the group and a `volume_mount` in the
+task as usual; the driver bind-mounts the volume into the task's private mount
+namespace and automatically grants the task Landlock access to the mount
+destination (read-only mounts get `rx`, read-write mounts get `rwxc`), so no
+extra `unveil` entry is needed for the mounted path.
+
+```hcl
+group "group" {
+  volume "data" {
+    type      = "host"
+    source    = "my-host-volume"
+    read_only = false
+  }
+
+  task "task" {
+    driver = "exec2"
+
+    volume_mount {
+      volume      = "data"
+      destination = "${NOMAD_ALLOC_DIR}/data"
+      read_only   = false
+    }
+
+    config {
+      command = "/bin/sh"
+      args    = ["-c", "echo hello > ${NOMAD_ALLOC_DIR}/data/out.txt"]
+    }
+  }
+}
+```
+
+A few things to keep in mind:
+
+  - The mount destination is created automatically only when it resolves
+  *inside* the allocation directory (e.g. under `$NOMAD_ALLOC_DIR`). A
+  destination that points elsewhere on the host must already exist, otherwise
+  the task is rejected — this prevents the driver from creating paths on the
+  shared host filesystem.
+
+  - Read-only mounts are enforced both by an `MS_RDONLY` remount and by a
+  read-only Landlock rule, so writes are rejected by the kernel.
+
+  - Because `exec2` runs tasks as an unprivileged user (a dynamic workload user
+  when `user` is unset), a write to a read-write volume succeeds only when the
+  backing directory is writable by the task's uid/gid. Provision the host
+  directory ownership accordingly (for host volumes), or use a CSI volume for
+  writable per-workload data.
+
+  - `exec2` provides one-way (host-to-task) mount propagation and cannot relabel
+  SELinux contexts; mounts requesting an unsupported propagation mode or an
+  SELinux label are rejected.
+
 #### Resource Isolation
 
 Similar to `exec` and other container runtimes, `exec2` makes use of cgroups
