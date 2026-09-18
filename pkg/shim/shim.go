@@ -27,13 +27,12 @@ import (
 
 // Options represent Task configuration options.
 type Options struct {
-	Command        string
-	Arguments      []string
-	UnveilPaths    []string
-	UnveilDefaults bool
-	OOMScoreAdj    int
-	Capabilities   []string
-	WorkDir        string // working directory for the task; defaults to TaskDir
+	Command      string
+	Arguments    []string
+	UnveilPaths  []string
+	OOMScoreAdj  int
+	Capabilities []string
+	WorkDir      string // working directory for the task; defaults to TaskDir
 }
 
 // Environment represents runtime configuration.
@@ -150,8 +149,14 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to set logging pipe ownership: %w", err)
 	}
 
+	// write shim config file
+	configPath, err := e.writeShimConfig(uid, gid)
+	if err != nil {
+		return fmt.Errorf("failed to write shim config: %w", err)
+	}
+
 	// create sandbox using nsenter, unshare, and our cgroup
-	cmd, err := e.prepare(ctx, home, fd, uid, gid)
+	cmd, err := e.prepare(ctx, home, fd, configPath)
 	if err != nil {
 		return err
 	}
@@ -371,7 +376,55 @@ func self() string {
 	return executable
 }
 
-func (e *exe) parameters(uid, gid int) []string {
+// writeShimConfig serializes all shim startup parameters into a JSON config
+// file in the task directory and returns its path.
+//
+// The file is written into TaskDir (the parent of NOMAD_TASK_DIR) rather than
+// NOMAD_TASK_DIR itself so that it falls outside every Landlock unveil entry:
+// the task process cannot read the shim's launch parameters. The shim reads the
+// file as root before it drops privileges and engages the sandbox, so it needs
+// no unveil entry of its own and the file stays root-owned with 0o600
+// permissions.
+//
+// File operations are performed through an os.Root opened on TaskDir so that
+// symlinks cannot redirect them outside the task directory.
+func (e *exe) writeShimConfig(uid, gid int) (string, error) {
+	taskDir := e.env.TaskDir
+	if taskDir == "" {
+		return "", fmt.Errorf("task directory is not set")
+	}
+
+	const name = ".shim_config.json"
+	path := filepath.Join(taskDir, name)
+
+	// Open the task directory as a root so every subsequent operation is
+	// confined to it.
+	root, err := os.OpenRoot(taskDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to open task dir for shim config: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	cfg := &ShimConfig{
+		Version:      configVersion,
+		OutPipe:      e.env.OutPipe,
+		ErrPipe:      e.env.ErrPipe,
+		UID:          uid,
+		GID:          gid,
+		Capabilities: e.opts.Capabilities,
+		UnveilPaths:  e.opts.UnveilPaths,
+		Command:      e.opts.Command,
+		Arguments:    e.opts.Arguments,
+	}
+
+	if err := cfg.write(root, name); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+func (e *exe) parameters(configPath string) []string {
 	var result []string
 
 	// setup nsenter if task was assigned a network namespace
@@ -397,35 +450,17 @@ func (e *exe) parameters(uid, gid int) []string {
 		"--fork",
 		"--kill-child=SIGKILL",
 		"--",
+		self(),
+		SubCommand,
+		configPath,
 	)
 
-	// setup ourself '$0 exec2-shim' for unveil
-	result = append(result, self(), SubCommand)
-	result = append(result, strconv.FormatBool(e.opts.UnveilDefaults))
-	result = append(result, e.env.OutPipe)
-	result = append(result, e.env.ErrPipe)
-	// pass uid and gid so the shim can drop privileges itself (after fork,
-	// before exec) with PR_SET_KEEPCAPS to preserve the ambient capability set
-	result = append(result, strconv.Itoa(uid))
-	result = append(result, strconv.Itoa(gid))
-	// pass capability names as a comma-separated string; empty means no caps
-	result = append(result, strings.Join(e.opts.Capabilities, ","))
-	result = append(result, e.opts.UnveilPaths...)
-	result = append(result, "--")
-
-	// append the user command
-	result = append(result, e.opts.Command)
-	if len(e.opts.Arguments) > 0 {
-		result = append(result, e.opts.Arguments...)
-	}
-
-	// craft complete result
 	return result
 }
 
 // create an exec.Cmd to run our process tree
-func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) (*exec.Cmd, error) {
-	params := e.parameters(uid, gid)
+func (e *exe) prepare(ctx context.Context, home string, fd int, configPath string) (*exec.Cmd, error) {
+	params := e.parameters(configPath)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
 
 	// Open the pipes via os.Root so that the open is resolved relative to
