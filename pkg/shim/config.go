@@ -7,11 +7,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // configVersion is the current version of the ShimConfig format.
 // Increment this if the format changes in a backward-incompatible way.
 const configVersion = 1
+
+// shimConfigName is the filename, relative to the task directory, of the
+// serialized ShimConfig that the exec2-shim reads at startup.
+const shimConfigName = ".shim_config.json"
 
 // ShimConfig holds all parameters the exec2-shim subprocess needs at startup.
 type ShimConfig struct {
@@ -47,49 +52,52 @@ type ShimConfig struct {
 	Arguments []string `json:"arguments"`
 }
 
-// write marshals the config as JSON and atomically writes it to dir/name.
-// All file operations are performed through dir (an os.Root) so that symlinks
-// cannot redirect the write or rename outside the task directory.
-// The data is first written to name+".tmp" then renamed into place,
-// so the shim never reads a partially-written file.
-func (cfg *ShimConfig) write(dir *os.Root, name string) error {
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("exec2: marshal shim config: %w", err)
+// write marshals the config as JSON and atomically writes it into taskDir as
+// shimConfigName, returning the full path to the written file.
+// The data is first written to a temporary file and then renamed into place, so the
+// shim never reads a partially-written config.
+func (cfg *ShimConfig) write(taskDir string) (string, error) {
+	if taskDir == "" {
+		return "", fmt.Errorf("exec2: task directory is not set")
 	}
 
-	tmp := name + ".tmp"
-
-	// root.OpenFile refuses to follow symlinks that escape the root,
-	// preventing a task from redirecting our write to an arbitrary path.
-	f, err := dir.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	root, err := os.OpenRoot(taskDir)
 	if err != nil {
-		return fmt.Errorf("exec2: create shim config tmp: %w", err)
+		return "", fmt.Errorf("exec2: open task dir for shim config: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("exec2: marshal shim config: %w", err)
+	}
+
+	tmp := shimConfigName + ".tmp"
+
+	f, err := root.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("exec2: create shim config tmp: %w", err)
 	}
 	_, werr := f.Write(data)
 	cerr := f.Close()
 	if werr != nil {
-		_ = dir.Remove(tmp)
-		return fmt.Errorf("exec2: write shim config tmp: %w", werr)
+		_ = root.Remove(tmp)
+		return "", fmt.Errorf("exec2: write shim config tmp: %w", werr)
 	}
 	if cerr != nil {
-		_ = dir.Remove(tmp)
-		return fmt.Errorf("exec2: close shim config tmp: %w", cerr)
+		_ = root.Remove(tmp)
+		return "", fmt.Errorf("exec2: close shim config tmp: %w", cerr)
 	}
 
-	// Rename within the root — both names are plain basenames so no escape
-	// is possible, and rename(2) replaces the destination atomically.
-	if err = dir.Rename(tmp, name); err != nil {
-		_ = dir.Remove(tmp)
-		return fmt.Errorf("exec2: rename shim config: %w", err)
+	if err = root.Rename(tmp, shimConfigName); err != nil {
+		_ = root.Remove(tmp)
+		return "", fmt.Errorf("exec2: rename shim config: %w", err)
 	}
 
-	return nil
+	return filepath.Join(taskDir, shimConfigName), nil
 }
 
 // readShimConfig reads and unmarshals a ShimConfig from path.
-// The returned error wraps fs.ErrNotExist when the file is absent, so callers
-// can distinguish "file not found" from a corrupt or malformed config.
 func readShimConfig(path string) (*ShimConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -150,7 +150,7 @@ func (e *exe) Start(ctx context.Context) error {
 	}
 
 	// write shim config file
-	configPath, err := e.writeShimConfig(uid, gid)
+	configPath, err := e.shimConfig(uid, gid).write(e.env.TaskDir)
 	if err != nil {
 		return fmt.Errorf("failed to write shim config: %w", err)
 	}
@@ -376,36 +376,10 @@ func self() string {
 	return executable
 }
 
-// writeShimConfig serializes all shim startup parameters into a JSON config
-// file in the task directory and returns its path.
-//
-// The file is written into TaskDir (the parent of NOMAD_TASK_DIR) rather than
-// NOMAD_TASK_DIR itself so that it falls outside every Landlock unveil entry:
-// the task process cannot read the shim's launch parameters. The shim reads the
-// file as root before it drops privileges and engages the sandbox, so it needs
-// no unveil entry of its own and the file stays root-owned with 0o600
-// permissions.
-//
-// File operations are performed through an os.Root opened on TaskDir so that
-// symlinks cannot redirect them outside the task directory.
-func (e *exe) writeShimConfig(uid, gid int) (string, error) {
-	taskDir := e.env.TaskDir
-	if taskDir == "" {
-		return "", fmt.Errorf("task directory is not set")
-	}
-
-	const name = ".shim_config.json"
-	path := filepath.Join(taskDir, name)
-
-	// Open the task directory as a root so every subsequent operation is
-	// confined to it.
-	root, err := os.OpenRoot(taskDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to open task dir for shim config: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-
-	cfg := &ShimConfig{
+// shimConfig assembles the ShimConfig that the exec2-shim subprocess needs at
+// startup from the exe's environment and options.
+func (e *exe) shimConfig(uid, gid int) *ShimConfig {
+	return &ShimConfig{
 		Version:      configVersion,
 		OutPipe:      e.env.OutPipe,
 		ErrPipe:      e.env.ErrPipe,
@@ -416,12 +390,6 @@ func (e *exe) writeShimConfig(uid, gid int) (string, error) {
 		Command:      e.opts.Command,
 		Arguments:    e.opts.Arguments,
 	}
-
-	if err := cfg.write(root, name); err != nil {
-		return "", err
-	}
-
-	return path, nil
 }
 
 func (e *exe) parameters(configPath string) []string {

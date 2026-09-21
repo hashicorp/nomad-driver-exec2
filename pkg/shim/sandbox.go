@@ -41,7 +41,7 @@ func convert(elements []string) ([]*landlock.Path, error) {
 	paths := make([]*landlock.Path, 0, len(elements))
 
 	for _, elem := range elements {
-		// built-ins identify a go-landlock path set and carry no mode prefix
+		// built-ins identify a go-landlock path set
 		if builtin, ok := landlockBuiltin(elem); ok {
 			paths = append(paths, builtin)
 			continue
