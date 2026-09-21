@@ -11,7 +11,7 @@ import (
 	"github.com/shoenig/go-landlock"
 )
 
-// These names identify go-landlock's built-in path sets. Each expands to an
+// These built-ins identify go-landlock's built-in path sets. Each expands to an
 // environment-specific set of paths that go-landlock resolves when the sandbox
 // is applied. They travel in the unveil list as plain strings, which keeps the
 // go-landlock import confined to the shim: the driver can reference these sets
