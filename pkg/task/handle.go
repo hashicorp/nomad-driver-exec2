@@ -129,19 +129,11 @@ func (h *Handle) Block() {
 	close(ch)
 }
 
-// ExecInfo returns the pid and network namespace path needed to build an
-// nsenter command for alloc exec. Both values are read under a single lock
-// acquisition.
-func (h *Handle) ExecInfo() (pid int, netns string) {
+// ExecInfo returns the pid whose namespaces alloc exec must enter.
+func (h *Handle) ExecInfo() (pid int) {
 	h.lock.RLock()
 	defer h.lock.RUnlock()
-	pid = h.pid
-	c := h.config
-	if c != nil && c.NetworkIsolation != nil &&
-		c.NetworkIsolation.Mode == drivers.NetIsolationModeGroup {
-		netns = c.NetworkIsolation.Path
-	}
-	return pid, netns
+	return h.pid
 }
 
 func (h *Handle) Signal(s string) error {

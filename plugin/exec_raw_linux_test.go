@@ -7,6 +7,6 @@ import (
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
-// Ensure Plugin implements ExecTaskStreamingRawDriver at compile time; Nomad's
-// gRPC server uses this interface to stream nomad alloc exec sessions.
+// Ensure Plugin satisfies the low-level ExecTaskStreamingRawDriver interface at
+// compile time.
 var _ drivers.ExecTaskStreamingRawDriver = (*Plugin)(nil)

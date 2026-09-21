@@ -19,10 +19,11 @@ import (
 	dproto "github.com/hashicorp/nomad/plugins/drivers/proto"
 )
 
-// ExecTaskStreamingRaw implements drivers.ExecTaskStreamingRawDriver.
-// It enters the running task's Linux namespaces via nsenter and runs the
-// requested command. When tty is true it opens a real PTY so interactive
-// shells work correctly; otherwise it uses plain pipes.
+// ExecTaskStreamingRaw services the driver ExecTaskStreaming RPC via the
+// drivers.ExecTaskStreamingRawDriver interface. It enters the task's
+// namespaces with nsenter and runs the command, handling both requests: when
+// tty is true it allocates a PTY for an interactive shell, otherwise it wires
+// stdin/stdout/stderr over pipes.
 func (p *Plugin) ExecTaskStreamingRaw(
 	ctx context.Context,
 	taskID string,
@@ -35,8 +36,8 @@ func (p *Plugin) ExecTaskStreamingRaw(
 		return drivers.ErrTaskNotFound
 	}
 
-	pid, netns := h.ExecInfo()
-	args := append(nsenterArgs(pid, netns), command...)
+	pid := h.ExecInfo()
+	args := append(nsenterArgs(pid), command...)
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 
 	if tty {

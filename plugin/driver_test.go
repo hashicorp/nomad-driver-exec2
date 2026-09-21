@@ -959,7 +959,7 @@ func TestExecTask_stderr(t *testing.T) {
 
 // TestExecTask_timeout verifies that ExecTask enforces its deadline: a command
 // that sleeps far longer than the timeout is killed at the deadline and reports
-// context.DeadlineExceeded.
+// context deadline exceeded.
 func TestExecTask_timeout(t *testing.T) {
 	ctests.RequireRoot(t)
 	ci.Parallel(t)
@@ -972,7 +972,7 @@ func TestExecTask_timeout(t *testing.T) {
 	_, err := harness.ExecTask(task.ID, []string{"/bin/sleep", "10"}, 200*time.Millisecond)
 	elapsed := time.Since(start)
 
-	must.ErrorIs(t, err, context.DeadlineExceeded)
+	must.ErrorContains(t, err, "context deadline exceeded")
 	// returned well before the 10 s sleep: the process was killed, not awaited
 	must.Less(t, 5*time.Second, elapsed)
 }

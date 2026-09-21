@@ -471,8 +471,8 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 	ctx, cancel := context.WithTimeout(p.ctx, timeout)
 	defer cancel()
 
-	pid, netns := h.ExecInfo()
-	args := append(nsenterArgs(pid, netns), cmd...)
+	pid := h.ExecInfo()
+	args := append(nsenterArgs(pid), cmd...)
 	command := exec.CommandContext(ctx, args[0], args[1:]...)
 
 	var stdout, stderr bytes.Buffer
@@ -510,31 +510,18 @@ func exitCode(err error) (int, error) {
 	return 0, err
 }
 
-// nsenterArgs builds the nsenter command prefix that enters the running task's
-// mount, pid, and ipc namespaces by PID. netns is entered too when non-empty.
+// nsenterArgs builds the nsenter prefix that enters *all* of the target's namespaces.
 //
-// netns is empty when the task uses host networking (network.mode = "host"), where the task
-// shares the host network by design. Bridge/group tasks have their own netns path, which is always entered.
-func nsenterArgs(pid int, netns string) []string {
-	// pre-allocate for the fixed 6 args plus optional --net and the -- sentinel
-	n := 7
-	if netns != "" {
-		n = 8
-	}
-	args := make([]string, 0, n)
-	args = append(args,
+// --all follows whatever the shim isolates (mount, pid, ipc, and
+// network in bridge mode), namespaces shared with the host are entered as no-ops
+func nsenterArgs(pid int) []string {
+	return []string{
 		"nsenter",
+		"--all",
+		"--target=" + strconv.Itoa(pid),
 		"--no-fork",
-		"--target="+strconv.Itoa(pid),
-		"--mount",
-		"--pid",
-		"--ipc",
-	)
-	if netns != "" {
-		args = append(args, "--net="+netns)
+		"--",
 	}
-	args = append(args, "--")
-	return args
 }
 
 // netns returns the filepath to the network namespace if the network
