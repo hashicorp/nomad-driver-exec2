@@ -663,11 +663,6 @@ func childEscapesParentDir(parent, child string) error {
 }
 
 // allocRootOf returns the task's per-task alloc mounts directory
-// (<clientAllocMountsDir>/<allocid>-<task>/) — the same tree Nomad bind-mounts
-// the task's local/alloc/secrets/logs into and that the task sees in its mount
-// namespace. NOMAD_TASK_DIR resolves to <that dir>/local, so its parent is the
-// per-task mounts root. This matches how the pipes, default unveils, and tmp
-// dir are derived (all via the NOMAD_* mounts paths).
 func allocRootOf(cfg *drivers.TaskConfig) string {
 	return filepath.Dir(cfg.Env["NOMAD_TASK_DIR"])
 }
