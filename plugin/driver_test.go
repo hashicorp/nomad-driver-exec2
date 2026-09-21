@@ -905,11 +905,9 @@ func startSleepTask(t *testing.T, harness *dtests.DriverHarness) *drivers.TaskCo
 	return task
 }
 
-// TestExecTaskStreaming_conformance runs Nomad's exec streaming basic-response
-// cases against the driver. It covers stdout/stderr separation, exit codes,
-// streaming, stdin, TTY merged output, TTY window resize, and child processes.
-// Each scenario exercises ExecTaskStreamingRaw (the raw gRPC path) because the
-// Plugin implements drivers.ExecTaskStreamingRawDriver.
+// TestExecTaskStreaming_conformance runs Nomad's shared ExecTaskStreamingBasicCases
+// table against the driver, asserting the exit code, stdout, and stderr of each case.
+// These exercise the driver's ExecTaskStreamingRaw implementation.
 func TestExecTaskStreaming_conformance(t *testing.T) {
 	ctests.RequireRoot(t)
 	ci.Parallel(t)
@@ -959,8 +957,9 @@ func TestExecTask_stderr(t *testing.T) {
 	must.StrContains(t, string(result.Stderr), "err")
 }
 
-// TestExecTask_timeout verifies that ExecTask respects its deadline: a command
-// that sleeps longer than the timeout must be killed and return an error.
+// TestExecTask_timeout verifies that ExecTask enforces its deadline: a command
+// that sleeps far longer than the timeout is killed at the deadline and reports
+// context.DeadlineExceeded.
 func TestExecTask_timeout(t *testing.T) {
 	ctests.RequireRoot(t)
 	ci.Parallel(t)
@@ -968,9 +967,14 @@ func TestExecTask_timeout(t *testing.T) {
 	harness := newTestHarness(t, &Config{UnveilDefaults: true})
 	task := startSleepTask(t, harness)
 
-	// 200 ms timeout against a command that sleeps 10 s — must be killed.
+	// 200 ms timeout against a command that sleeps 10 s.
+	start := time.Now()
 	_, err := harness.ExecTask(task.ID, []string{"/bin/sleep", "10"}, 200*time.Millisecond)
-	must.Error(t, err)
+	elapsed := time.Since(start)
+
+	must.ErrorIs(t, err, context.DeadlineExceeded)
+	// returned well before the 10 s sleep: the process was killed, not awaited
+	must.Less(t, 5*time.Second, elapsed)
 }
 
 // TestFunctional_TaskStats_RSS verifies that RSS is reported as a non-zero value

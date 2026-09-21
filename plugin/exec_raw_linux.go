@@ -19,11 +19,6 @@ import (
 	dproto "github.com/hashicorp/nomad/plugins/drivers/proto"
 )
 
-// Ensure Plugin implements ExecTaskStreamingRawDriver at compile time.
-// Nomad's gRPC server prefers this interface over ExecTaskStreaming when a
-// driver implements it.
-var _ drivers.ExecTaskStreamingRawDriver = (*Plugin)(nil)
-
 // ExecTaskStreamingRaw implements drivers.ExecTaskStreamingRawDriver.
 // It enters the running task's Linux namespaces via nsenter and runs the
 // requested command. When tty is true it opens a real PTY so interactive
@@ -152,10 +147,8 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	}()
 
 	waitErr := cmd.Wait()
-	// Use SetDeadline to unblock the stdout goroutine's ptm.Read() without
-	// racing against ptm.Close(). SetDeadline is concurrency-safe on *os.File
-	// and causes the blocked Read to return with a timeout/poll error, which
-	// isExecStreamClosed treats as a clean-close. The actual ptm.Close() is
+	// SetDeadline to unblock the stdout goroutine's ptm.Read() without
+	// racing against ptm.Close(). The actual ptm.Close() is
 	// handled by defer above, after wg.Wait() ensures all goroutines are done.
 	_ = ptm.SetDeadline(time.Now())
 	wg.Wait()
@@ -332,15 +325,8 @@ func buildExecExitResult(ps *os.ProcessState, err error) *drivers.ExecTaskStream
 	}
 }
 
-// isExecStreamClosed returns true for errors that indicate the stream or pipe
-// has been cleanly closed and no further I/O should be attempted.
-//
-//   - io.EOF / io.ErrClosedPipe — pipe write-end closed (no-TTY path)
-//   - os.ErrClosed — read on an *os.File after it was closed (ptm.Close unblocks
-//     a blocked Read; Go wraps the kernel EBADF as os.ErrClosed internally)
-//   - syscall.EIO — PTY slave closed after the process exited (normal TTY exit);
-//     may arrive unwrapped or wrapped inside an *os.PathError
-//   - syscall.EBADF — raw errno variant of the above
+// isExecStreamClosed reports whether err means the stream or pipe was cleanly
+// closed and no further I/O should be attempted.
 func isExecStreamClosed(err error) bool {
 	if err == nil {
 		return false
@@ -348,9 +334,6 @@ func isExecStreamClosed(err error) bool {
 	if err == io.EOF || err == io.ErrClosedPipe {
 		return true
 	}
-	// os.ErrClosed — read on an already-closed *os.File.
-	// os.ErrDeadlineExceeded — SetDeadline(time.Now()) fired to unblock Read.
-	// errors.Is unwraps *os.PathError for both.
 	if errors.Is(err, os.ErrClosed) || errors.Is(err, os.ErrDeadlineExceeded) {
 		return true
 	}

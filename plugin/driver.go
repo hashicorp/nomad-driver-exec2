@@ -468,7 +468,7 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 		return nil, drivers.ErrTaskNotFound
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(p.ctx, timeout)
 	defer cancel()
 
 	pid, netns := h.ExecInfo()
@@ -481,11 +481,9 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 
 	runErr := command.Run()
 
-	// Context expiry (deadline exceeded or cancel) takes priority: the process
-	// was killed by exec.CommandContext, so the *exec.ExitError is a side-effect
-	// of the kill rather than a meaningful exit code from the command.
+	// This fires on either the timeout (context.DeadlineExceeded) or plugin shutdown (p.ctx cancelled).
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("exec task timed out: %w", err)
+		return nil, fmt.Errorf("exec task aborted: %w", err)
 	}
 
 	code, err := exitCode(runErr)
@@ -498,44 +496,6 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 		Stderr:     stderr.Bytes(),
 		ExitResult: &drivers.ExitResult{ExitCode: code},
 	}, nil
-}
-
-// ExecTaskStreaming implements drivers.ExecTaskStreamingDriver and runs cmd
-// inside the running task's Linux namespaces via nsenter, streaming
-// stdin/stdout/stderr in real time.
-//
-// NOTE: on Linux this method is superseded by ExecTaskStreamingRaw
-// (exec_raw_linux.go), which Nomad's gRPC server and test harness prefer when
-// the driver implements drivers.ExecTaskStreamingRawDriver. ExecTaskStreaming
-// is therefore never called in practice on this platform; it is kept as a
-// documented non-TTY fallback in case the Raw interface is unavailable.
-func (p *Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
-	h, exists := p.tasks.Get(taskID)
-	if !exists {
-		return nil, drivers.ErrTaskNotFound
-	}
-
-	pid, netns := h.ExecInfo()
-	args := append(nsenterArgs(pid, netns), execOptions.Command...)
-	command := exec.CommandContext(ctx, args[0], args[1:]...)
-	command.Stdin = execOptions.Stdin
-	command.Stdout = execOptions.Stdout
-	command.Stderr = execOptions.Stderr
-
-	runErr := command.Run()
-
-	// Context cancellation (client disconnect, server-side timeout) takes
-	// priority over the *exec.ExitError produced by the resulting SIGKILL.
-	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("exec task streaming cancelled: %w", err)
-	}
-
-	code, err := exitCode(runErr)
-	if err != nil {
-		return nil, fmt.Errorf("exec task streaming failed: %w", err)
-	}
-
-	return &drivers.ExitResult{ExitCode: code}, nil
 }
 
 // exitCode extracts the process exit code from a command error.
@@ -551,8 +511,10 @@ func exitCode(err error) (int, error) {
 }
 
 // nsenterArgs builds the nsenter command prefix that enters the running task's
-// mount, pid, and ipc namespaces by PID. If netns is non-empty the task's
-// network namespace is entered as well.
+// mount, pid, and ipc namespaces by PID. netns is entered too when non-empty.
+//
+// netns is empty when the task uses host networking (network.mode = "host"), where the task
+// shares the host network by design. Bridge/group tasks have their own netns path, which is always entered.
 func nsenterArgs(pid int, netns string) []string {
 	// pre-allocate for the fixed 6 args plus optional --net and the -- sentinel
 	n := 7
