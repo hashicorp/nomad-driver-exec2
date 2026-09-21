@@ -565,7 +565,7 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		parent := filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+filepath.Join(parent, "tmp"))
 
-		// base system ruleset. The bundle tokens expand to go-landlock path
+		// base system ruleset. The built-ins expand to go-landlock path
 		// sets inside the shim, the remaining entries are plain directories.
 		unveil = append(unveil,
 			shim.UnveilShared,

@@ -11,10 +11,11 @@ import (
 	"github.com/shoenig/go-landlock"
 )
 
-// Bundle tokens name go-landlock's built-in path sets. Each expands to an
+// These names identify go-landlock's built-in path sets. Each expands to an
 // environment-specific set of paths that go-landlock resolves when the sandbox
-// is applied. They travel in the unveil list as opaque strings so the driver 
-// can include them without depending on go-landlock.
+// is applied. They travel in the unveil list as plain strings, which keeps the
+// go-landlock import confined to the shim: the driver can reference these sets
+// by name without importing go-landlock itself.
 const (
 	UnveilShared = "@shared" // shared libraries ( /lib, /usr/lib, ...)
 	UnveilStdio  = "@stdio"  // standard I/O devices (/dev/null, /dev/zero, ...)
@@ -40,9 +41,9 @@ func convert(elements []string) ([]*landlock.Path, error) {
 	paths := make([]*landlock.Path, 0, len(elements))
 
 	for _, elem := range elements {
-		// bundle tokens name a go-landlock path set and carry no mode prefix
-		if bundle, ok := landlockBundle(elem); ok {
-			paths = append(paths, bundle)
+		// built-ins identify a go-landlock path set and carry no mode prefix
+		if builtin, ok := landlockBuiltin(elem); ok {
+			paths = append(paths, builtin)
 			continue
 		}
 
@@ -81,9 +82,9 @@ func convert(elements []string) ([]*landlock.Path, error) {
 	return paths, nil
 }
 
-// landlockBundle maps a bundle token to its go-landlock path set.
-func landlockBundle(token string) (*landlock.Path, bool) {
-	switch token {
+// landlockBuiltin maps a name to its go-landlock built-in path set.
+func landlockBuiltin(name string) (*landlock.Path, bool) {
+	switch name {
 	case UnveilShared:
 		return landlock.Shared(), true
 	case UnveilStdio:

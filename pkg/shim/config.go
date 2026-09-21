@@ -36,7 +36,7 @@ type ShimConfig struct {
 
 	// UnveilPaths is the complete list of Landlock entries to expose.
 	// Each entry is either a "mode:path" pair (e.g. "r:/some/path", "rwxc:/alloc/data")
-	// or a bundle token (e.g. UnveilShared, UnveilCerts) that the shim expands
+	// or built-ins (e.g. UnveilShared, UnveilCerts) that the shim expands
 	// to a go-landlock path set.
 	UnveilPaths []string `json:"unveil_paths"`
 
