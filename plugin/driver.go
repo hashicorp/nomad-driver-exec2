@@ -578,8 +578,8 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	// childEscapesParentDir uses os.OpenRoot so the kernel enforces the
 	// boundary — symlinks pointing outside the alloc root cannot bypass this.
 	if taskConfig.WorkDir != "" {
-		// alloc root is the grandparent of NOMAD_TASK_DIR:
-		// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
+		// alloc root is the task's alloc mounts directory (the parent of
+		// NOMAD_TASK_DIR, which holds local/alloc/secrets/tmp).
 		allocRoot := allocRootOf(driverTaskConfig)
 		if err := childEscapesParentDir(allocRoot, taskConfig.WorkDir); err != nil {
 			if !p.config.UnveilByTask {
@@ -662,9 +662,14 @@ func childEscapesParentDir(parent, child string) error {
 	return nil
 }
 
-// allocRootOf returns the allocation root directory for a task
+// allocRootOf returns the task's per-task alloc mounts directory
+// (<clientAllocMountsDir>/<allocid>-<task>/) — the same tree Nomad bind-mounts
+// the task's local/alloc/secrets/logs into and that the task sees in its mount
+// namespace. NOMAD_TASK_DIR resolves to <that dir>/local, so its parent is the
+// per-task mounts root. This matches how the pipes, default unveils, and tmp
+// dir are derived (all via the NOMAD_* mounts paths).
 func allocRootOf(cfg *drivers.TaskConfig) string {
-	return filepath.Dir(filepath.Dir(cfg.Env["NOMAD_TASK_DIR"]))
+	return filepath.Dir(cfg.Env["NOMAD_TASK_DIR"])
 }
 
 // prepareMounts converts Nomad's host/CSI volume mounts into shim bind mounts
@@ -677,8 +682,8 @@ func (p *Plugin) prepareMounts(cfg *drivers.TaskConfig) ([]shim.Mount, []string,
 		return nil, nil, nil
 	}
 
-	// alloc root is the grandparent of NOMAD_TASK_DIR:
-	// NOMAD_TASK_DIR = <alloc>/<task>/local  →  alloc root = <alloc>
+	// alloc root is the task's alloc mounts directory (the parent of
+	// NOMAD_TASK_DIR, which holds local/alloc/secrets/tmp).
 	allocRoot := allocRootOf(cfg)
 
 	var (
