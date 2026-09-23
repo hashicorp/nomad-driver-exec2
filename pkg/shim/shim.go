@@ -6,7 +6,6 @@ package shim
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +30,6 @@ type Options struct {
 	Command        string
 	Arguments      []string
 	UnveilPaths    []string
-	UnveilDefaults bool
 	OOMScoreAdj    int
 	Capabilities   []string
 	WorkDir        string  // working directory for the task; defaults to TaskDir
@@ -160,8 +158,14 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to set logging pipe ownership: %w", err)
 	}
 
+	// write shim config file
+	configPath, err := e.shimConfig(uid, gid).write(e.env.TaskDir)
+	if err != nil {
+		return fmt.Errorf("failed to write shim config: %w", err)
+	}
+
 	// create sandbox using nsenter, unshare, and our cgroup
-	cmd, err := e.prepare(ctx, home, fd, uid, gid)
+	cmd, err := e.prepare(ctx, home, fd, configPath)
 	if err != nil {
 		return err
 	}
@@ -381,7 +385,24 @@ func self() string {
 	return executable
 }
 
-func (e *exe) parameters(uid, gid int) []string {
+// shimConfig assembles the ShimConfig that the exec2-shim subprocess needs at
+// startup from the exe's environment and options.
+func (e *exe) shimConfig(uid, gid int) *ShimConfig {
+	return &ShimConfig{
+		Version:      configVersion,
+		OutPipe:      e.env.OutPipe,
+		ErrPipe:      e.env.ErrPipe,
+		UID:          uid,
+		GID:          gid,
+		Capabilities: e.opts.Capabilities,
+		UnveilPaths:  e.opts.UnveilPaths,
+		Command:      e.opts.Command,
+		Arguments:    e.opts.Arguments,
+		Mounts:       e.opts.Mounts, 
+	}
+}
+
+func (e *exe) parameters(configPath string) []string {
 	var result []string
 
 	// setup nsenter if task was assigned a network namespace
@@ -407,44 +428,17 @@ func (e *exe) parameters(uid, gid int) []string {
 		"--fork",
 		"--kill-child=SIGKILL",
 		"--",
+		self(),
+		SubCommand,
+		configPath,
 	)
 
-	// setup ourself '$0 exec2-shim' for unveil
-	result = append(result, self(), SubCommand)
-	result = append(result, strconv.FormatBool(e.opts.UnveilDefaults))
-	result = append(result, e.env.OutPipe)
-	result = append(result, e.env.ErrPipe)
-	// pass uid and gid so the shim can drop privileges itself (after fork,
-	// before exec) with PR_SET_KEEPCAPS to preserve the ambient capability set
-	result = append(result, strconv.Itoa(uid))
-	result = append(result, strconv.Itoa(gid))
-	// pass capability names as a comma-separated string; empty means no caps
-	result = append(result, strings.Join(e.opts.Capabilities, ","))
-	// pass bind mounts as a single JSON-encoded argument (always present, even
-	// as "null"/"[]") so the positional index of the unveil paths stays stable
-	result = append(result, marshalMounts(e.opts.Mounts))
-	result = append(result, e.opts.UnveilPaths...)
-	result = append(result, "--")
-
-	// append the user command
-	result = append(result, e.opts.Command)
-	if len(e.opts.Arguments) > 0 {
-		result = append(result, e.opts.Arguments...)
-	}
-
-	// craft complete result
 	return result
 }
 
-// marshalMounts encodes the bind mount list as a single JSON argument
-func marshalMounts(mounts []Mount) string {
-	b, _ := json.Marshal(mounts)
-	return string(b)
-}
-
 // create an exec.Cmd to run our process tree
-func (e *exe) prepare(ctx context.Context, home string, fd, uid, gid int) (*exec.Cmd, error) {
-	params := e.parameters(uid, gid)
+func (e *exe) prepare(ctx context.Context, home string, fd int, configPath string) (*exec.Cmd, error) {
+	params := e.parameters(configPath)
 	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
 
 	// Open the pipes via os.Root so that the open is resolved relative to
