@@ -279,7 +279,6 @@ func (p *Plugin) StartTask(config *drivers.TaskConfig) (*drivers.TaskHandle, *dr
 		"cmd", opts.Command,
 		"args", opts.Arguments,
 		"unveil_paths", opts.UnveilPaths,
-		"unveil_defaults", opts.UnveilDefaults,
 		"oom_score_adj", opts.OOMScoreAdj,
 		"capabilities", opts.Capabilities,
 	)
@@ -553,9 +552,11 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	unveil := slices.Clone(p.config.UnveilPaths)
 
 	// if the plugin config.unveil_defaults value is set to true (very common)
-	// then automatically unveil the sandbox directories
+	// then automatically unveil the sandbox directories and the base system
+	// ruleset. The complete policy is assembled here so the shim receives one
+	// list and applies it without adding paths of its own.
 	if p.config.UnveilDefaults {
-		// Expose the task's cgroup read-only so runtimes can read resource limits.
+		// per-allocation directories
 		unveil = append(unveil, "r:"+driverTaskConfig.Resources.LinuxResources.CpusetCgroupPath)
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_ALLOC_DIR"])
@@ -563,6 +564,19 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 		unveil = append(unveil, "rwxc:"+driverTaskConfig.Env["NOMAD_SECRETS_DIR"])
 		parent := filepath.Dir(driverTaskConfig.Env["NOMAD_TASK_DIR"])
 		unveil = append(unveil, "rwxc:"+filepath.Join(parent, "tmp"))
+
+		// base system ruleset. The built-ins expand to go-landlock path
+		// sets inside the shim, the remaining entries are plain directories.
+		unveil = append(unveil,
+			shim.UnveilShared,
+			shim.UnveilStdio,
+			shim.UnveilDNS,
+			shim.UnveilCerts,
+			"rx:/bin",
+			"rx:/usr/bin",
+			"rx:/usr/local/bin",
+			"r:/proc",
+		)
 	}
 
 	// if work_dir is set, it must be accessible under Landlock — the task
@@ -617,13 +631,12 @@ func (p *Plugin) setOptions(driverTaskConfig *drivers.TaskConfig) (*shim.Options
 	}
 
 	return &shim.Options{
-		Command:        taskConfig.Command,
-		Arguments:      taskConfig.Args,
-		UnveilPaths:    unveil,
-		UnveilDefaults: p.config.UnveilDefaults,
-		OOMScoreAdj:    taskConfig.OOMScoreAdj,
-		Capabilities:   effectiveCaps.Slice(),
-		WorkDir:        taskConfig.WorkDir,
+		Command:      taskConfig.Command,
+		Arguments:    taskConfig.Args,
+		UnveilPaths:  unveil,
+		OOMScoreAdj:  taskConfig.OOMScoreAdj,
+		Capabilities: effectiveCaps.Slice(),
+		WorkDir:      taskConfig.WorkDir,
 	}, nil
 }
 
