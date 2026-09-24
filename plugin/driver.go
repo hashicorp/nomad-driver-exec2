@@ -681,7 +681,7 @@ func allocRootOf(cfg *drivers.TaskConfig) string {
 }
 
 // prepareMounts converts Nomad's host/CSI volume mounts into shim bind mounts
-// and the corresponding Landlock unveil entries. To avoid polluting the host filesystem, a missing target is
+// and the corresponding Landlock unveil entries. A missing target is
 // only created automatically when it resolves inside the allocation directory
 // (task-private and cleaned up by Nomad). A missing target outside the alloc
 // directory is an error asking the operator to pre-create it.
@@ -732,7 +732,7 @@ func (p *Plugin) prepareMounts(cfg *drivers.TaskConfig) ([]shim.Mount, []string,
 			Readonly: m.Readonly,
 		})
 
-		// grant the task access to the mount target under Landlock; read-only
+		// grant the task access to the mount target under Landlock, read-only
 		// mounts only need read+execute, read-write mounts need full access.
 		mode := "rwxc:"
 		if m.Readonly {
@@ -745,9 +745,8 @@ func (p *Plugin) prepareMounts(cfg *drivers.TaskConfig) ([]shim.Mount, []string,
 }
 
 // ensureMountpoint makes sure the bind mount target exists. A missing target is
-// created only when it resolves inside the allocation directory; a missing
-// target outside the alloc directory returns an error so the driver never
-// creates files or directories on the shared host filesystem.
+// created only when it resolves inside the allocation directory, a missing
+// target outside the alloc directory returns an error.
 func ensureMountpoint(allocRoot, target string, sourceIsDir bool) error {
 	if _, err := os.Lstat(target); err == nil {
 		return nil // target already exists; bind mount will cover it
@@ -775,7 +774,7 @@ func ensureMountpoint(allocRoot, target string, sourceIsDir bool) error {
 		return fmt.Errorf("resolving mount target %q: %w", target, err)
 	}
 
-	// a directory source needs a directory mountpoint; a file source needs an
+	// a directory source needs a directory mountpoint, a file source needs an
 	// empty file (with its parent directory) to bind over
 	if sourceIsDir {
 		if err := root.MkdirAll(rel, 0o755); err != nil {
