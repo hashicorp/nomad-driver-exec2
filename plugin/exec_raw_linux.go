@@ -110,7 +110,7 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	}()
 
 	waitErr := cmd.Wait()
-	// Unblock the stdout goroutine's
+	// Unblock the stdout goroutine's ptm.Read.
 	_ = ptm.SetDeadline(time.Now())
 	wg.Wait()
 	// Mark ptm closed under the lock, this waits for any in-flight Write/Setsize
