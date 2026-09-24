@@ -481,7 +481,6 @@ func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*
 
 	runErr := command.Run()
 
-	// This fires on either the timeout (context.DeadlineExceeded) or plugin shutdown (p.ctx cancelled).
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("exec task aborted: %w", err)
 	}
@@ -513,7 +512,7 @@ func exitCode(err error) (int, error) {
 // nsenterArgs builds the nsenter prefix that enters *all* of the target's namespaces.
 //
 // --all follows whatever the shim isolates (mount, pid, ipc, and
-// network in bridge mode), namespaces shared with the host are entered as no-ops
+// network in bridge mode)
 func nsenterArgs(pid int) []string {
 	return []string{
 		"nsenter",

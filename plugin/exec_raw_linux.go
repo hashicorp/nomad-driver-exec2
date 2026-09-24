@@ -70,81 +70,35 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 		pts.Close()
 		return fmt.Errorf("exec streaming tty: start: %w", err)
 	}
-	// Close slave in the parent — the child inherited its own copy.
+	// Close slave in the parent
 	pts.Close()
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 
-	// stdin + resize: gRPC stream → PTY master.
-	// Uses ptmMu to serialise Setsize/Write against the ptm.Close() call that
-	// follows cmd.Wait(). The goroutine is not added to wg because it blocks
-	// on stream.Recv() which is only unblocked by the gRPC runtime after the
-	// RPC returns; it will exit cleanly once ptm operations return ErrClosed.
+	// stdin + resize → PTY master. ptmMu serialises writes/resize against the
+	// SetDeadline/Close fence after cmd.Wait(). closeStdin is nil: the master is
+	// shared with stdout and must not be closed on Stdin.Close.
 	var ptmMu sync.Mutex
-	go func() {
-		for {
-			msg, err := stream.Recv()
-			if isExecStreamClosed(err) {
-				return
-			}
-			if err != nil {
-				errCh <- err
-				return
-			}
-			if msg.Stdin != nil {
-				if len(msg.Stdin.Data) > 0 {
-					ptmMu.Lock()
-					_, werr := ptm.Write(msg.Stdin.Data)
-					ptmMu.Unlock()
-					if werr != nil {
-						if isExecStreamClosed(werr) {
-							return
-						}
-						errCh <- werr
-						return
-					}
-				}
-				if msg.Stdin.Close {
-					return
-				}
-			} else if msg.TtySize != nil {
-				// Forward terminal resize events so the process sees the
-				// correct window size (required for editors, less, etc.)
-				ptmMu.Lock()
-				_ = pty.Setsize(ptm, &pty.Winsize{
-					Rows: uint16(msg.TtySize.Height),
-					Cols: uint16(msg.TtySize.Width),
-				})
-				ptmMu.Unlock()
-			}
-		}
-	}()
+	ptmWrite := func(p []byte) error {
+		ptmMu.Lock()
+		defer ptmMu.Unlock()
+		_, err := ptm.Write(p)
+		return err
+	}
+	ptmResize := func(height, width int) error {
+		ptmMu.Lock()
+		defer ptmMu.Unlock()
+		return pty.Setsize(ptm, &pty.Winsize{Rows: uint16(height), Cols: uint16(width)})
+	}
+	// Not in wg: blocks on stream.Recv() until the RPC returns.
+	go handleExecStdin(stream, ptmWrite, ptmResize, nil, errCh)
 
-	// stdout: PTY master → gRPC stream
-	// In TTY mode stderr is merged into stdout by the PTY itself.
+	// stdout: PTY master → stream (stderr is merged into stdout by the PTY).
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 4096)
-		for {
-			n, err := ptm.Read(buf)
-			if n > 0 {
-				_ = stream.Send(&drivers.ExecTaskStreamingResponseMsg{
-					Stdout: &dproto.ExecTaskStreamingIOOperation{Data: buf[:n]},
-				})
-			}
-			if isExecStreamClosed(err) {
-				_ = stream.Send(&drivers.ExecTaskStreamingResponseMsg{
-					Stdout: &dproto.ExecTaskStreamingIOOperation{Close: true},
-				})
-				return
-			}
-			if err != nil {
-				errCh <- err
-				return
-			}
-		}
+		forwardExecOutput(ptm, stdoutDataMsg, stdoutCloseMsg, stream.Send, errCh)
 	}()
 
 	waitErr := cmd.Wait()
@@ -193,68 +147,26 @@ func execRawNoTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 3)
 
-	// stdin: gRPC stream → cmd
-	go func() {
-		for {
-			msg, err := stream.Recv()
-			if isExecStreamClosed(err) {
-				stdinW.Close()
-				return
-			}
-			if err != nil {
-				errCh <- err
-				return
-			}
-			if msg.Stdin != nil {
-				if len(msg.Stdin.Data) > 0 {
-					if _, err := stdinW.Write(msg.Stdin.Data); err != nil {
-						errCh <- err
-						return
-					}
-				}
-				if msg.Stdin.Close {
-					stdinW.Close()
-				}
-			}
-		}
-	}()
+	// stdin → cmd. stdinW closes only on explicit Stdin.Close; stream-close
+	// teardown is handled by the caller below.
+	stdinWrite := func(p []byte) error {
+		_, err := stdinW.Write(p)
+		return err
+	}
+	go handleExecStdin(stream, stdinWrite, nil, func() { _ = stdinW.Close() }, errCh)
 
 	// stdout: cmd → gRPC stream
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		forwardExecOutput(stdoutR,
-			func(b []byte) *drivers.ExecTaskStreamingResponseMsg {
-				return &drivers.ExecTaskStreamingResponseMsg{
-					Stdout: &dproto.ExecTaskStreamingIOOperation{Data: b},
-				}
-			},
-			func() *drivers.ExecTaskStreamingResponseMsg {
-				return &drivers.ExecTaskStreamingResponseMsg{
-					Stdout: &dproto.ExecTaskStreamingIOOperation{Close: true},
-				}
-			},
-			send, errCh,
-		)
+		forwardExecOutput(stdoutR, stdoutDataMsg, stdoutCloseMsg, send, errCh)
 	}()
 
 	// stderr: cmd → gRPC stream
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		forwardExecOutput(stderrR,
-			func(b []byte) *drivers.ExecTaskStreamingResponseMsg {
-				return &drivers.ExecTaskStreamingResponseMsg{
-					Stderr: &dproto.ExecTaskStreamingIOOperation{Data: b},
-				}
-			},
-			func() *drivers.ExecTaskStreamingResponseMsg {
-				return &drivers.ExecTaskStreamingResponseMsg{
-					Stderr: &dproto.ExecTaskStreamingIOOperation{Close: true},
-				}
-			},
-			send, errCh,
-		)
+		forwardExecOutput(stderrR, stderrDataMsg, stderrCloseMsg, send, errCh)
 	}()
 
 	waitErr := cmd.Wait()
@@ -270,6 +182,77 @@ func execRawNoTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 		return err
 	default:
 		return nil
+	}
+}
+
+// handleExecStdin forwards stdin data and TTY resize events from the stream to
+// the process. resize is nil for non-TTY execs. closeStdin is invoked only on
+// an explicit client Stdin.Close, and is nil when the destination must not be
+// closed here (e.g. a PTY master shared with stdout)
+func handleExecStdin(
+	stream drivers.ExecTaskStream,
+	write func([]byte) error,
+	resize func(height, width int) error,
+	closeStdin func(),
+	errCh chan<- error,
+) {
+	for {
+		msg, err := stream.Recv()
+		if isExecStreamClosed(err) {
+			return
+		}
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		switch {
+		case msg.Stdin != nil:
+			if len(msg.Stdin.Data) > 0 {
+				if werr := write(msg.Stdin.Data); werr != nil {
+					if isExecStreamClosed(werr) {
+						return
+					}
+					errCh <- werr
+					return
+				}
+			}
+			if msg.Stdin.Close {
+				if closeStdin != nil {
+					closeStdin()
+				}
+				return
+			}
+		case msg.TtySize != nil && resize != nil:
+			if rerr := resize(int(msg.TtySize.Height), int(msg.TtySize.Width)); rerr != nil {
+				errCh <- rerr
+				return
+			}
+		}
+	}
+}
+
+func stdoutDataMsg(b []byte) *drivers.ExecTaskStreamingResponseMsg {
+	return &drivers.ExecTaskStreamingResponseMsg{
+		Stdout: &dproto.ExecTaskStreamingIOOperation{Data: b},
+	}
+}
+
+func stdoutCloseMsg() *drivers.ExecTaskStreamingResponseMsg {
+	return &drivers.ExecTaskStreamingResponseMsg{
+		Stdout: &dproto.ExecTaskStreamingIOOperation{Close: true},
+	}
+}
+
+func stderrDataMsg(b []byte) *drivers.ExecTaskStreamingResponseMsg {
+	return &drivers.ExecTaskStreamingResponseMsg{
+		Stderr: &dproto.ExecTaskStreamingIOOperation{Data: b},
+	}
+}
+
+func stderrCloseMsg() *drivers.ExecTaskStreamingResponseMsg {
+	return &drivers.ExecTaskStreamingResponseMsg{
+		Stderr: &dproto.ExecTaskStreamingIOOperation{Close: true},
 	}
 }
 
