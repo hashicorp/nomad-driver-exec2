@@ -76,19 +76,27 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 
-	// stdin + resize → PTY master. ptmMu serialises writes/resize against the
-	// SetDeadline/Close fence after cmd.Wait(). closeStdin is nil: the master is
-	// shared with stdout and must not be closed on Stdin.Close.
-	var ptmMu sync.Mutex
+	// stdin + resize → PTY master. ptmMu guards ptm access, ptmClosed 
+	// makes the stdin goroutine stop touching ptm once it is closed. 
+	var (
+		ptmMu     sync.Mutex
+		ptmClosed bool
+	)
 	ptmWrite := func(p []byte) error {
 		ptmMu.Lock()
 		defer ptmMu.Unlock()
+		if ptmClosed {
+			return os.ErrClosed
+		}
 		_, err := ptm.Write(p)
 		return err
 	}
 	ptmResize := func(height, width int) error {
 		ptmMu.Lock()
 		defer ptmMu.Unlock()
+		if ptmClosed {
+			return os.ErrClosed
+		}
 		return pty.Setsize(ptm, &pty.Winsize{Rows: uint16(height), Cols: uint16(width)})
 	}
 	// Not in wg: blocks on stream.Recv() until the RPC returns.
@@ -102,13 +110,14 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	}()
 
 	waitErr := cmd.Wait()
-	// SetDeadline to unblock the stdout goroutine's ptm.Read() without
-	// racing against ptm.Close(). The actual ptm.Close() is
-	// handled by defer above, after wg.Wait() ensures all goroutines are done.
+	// Unblock the stdout goroutine's
 	_ = ptm.SetDeadline(time.Now())
 	wg.Wait()
+	// Mark ptm closed under the lock, this waits for any in-flight Write/Setsize
+	// and blocks the stdin goroutine from touching ptm before the deferred Close.
 	ptmMu.Lock()
-	ptmMu.Unlock() // fence: ensures stdin goroutine is not inside Setsize/Write when defer fires
+	ptmClosed = true
+	ptmMu.Unlock()
 
 	// Send the final exit result back to Nomad.
 	_ = stream.Send(buildExecExitResult(cmd.ProcessState, waitErr))
@@ -225,6 +234,9 @@ func handleExecStdin(
 			}
 		case msg.TtySize != nil && resize != nil:
 			if rerr := resize(int(msg.TtySize.Height), int(msg.TtySize.Width)); rerr != nil {
+				if isExecStreamClosed(rerr) {
+					return
+				}
 				errCh <- rerr
 				return
 			}
