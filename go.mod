@@ -1,6 +1,6 @@
 module github.com/hashicorp/nomad-driver-exec2
 
-go 1.26
+go 1.26.0
 
 // maintain the go-metrics version required by nomad
 replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
@@ -13,7 +13,7 @@ require (
 	github.com/moby/sys/capability v0.4.0
 	github.com/shoenig/go-landlock v1.3.1
 	github.com/shoenig/test v1.13.2
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	oss.indeed.com/go/libtime v1.6.0
 )
 
