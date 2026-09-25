@@ -129,6 +129,13 @@ func (h *Handle) Block() {
 	close(ch)
 }
 
+// ExecInfo returns the pid whose namespaces alloc exec must enter.
+func (h *Handle) ExecInfo() (pid int) {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	return h.pid
+}
+
 func (h *Handle) Signal(s string) error {
 	return h.runner.Signal(s)
 }
