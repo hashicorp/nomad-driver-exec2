@@ -27,12 +27,21 @@ import (
 
 // Options represent Task configuration options.
 type Options struct {
-	Command      string
-	Arguments    []string
-	UnveilPaths  []string
-	OOMScoreAdj  int
-	Capabilities []string
-	WorkDir      string // working directory for the task; defaults to TaskDir
+	Command        string
+	Arguments      []string
+	UnveilPaths    []string
+	OOMScoreAdj    int
+	Capabilities   []string
+	WorkDir        string  // working directory for the task; defaults to TaskDir
+	Mounts         []Mount // bind mounts to set up inside the task mount namespace
+}
+
+// Mount describes a single bind mount to establish inside the task's private mount namespace before the task command is executed.
+// Source is the host path and Target is the path as seen by the task.
+type Mount struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	Readonly bool   `json:"readonly"`
 }
 
 // Environment represents runtime configuration.
@@ -389,6 +398,7 @@ func (e *exe) shimConfig(uid, gid int) *ShimConfig {
 		UnveilPaths:  e.opts.UnveilPaths,
 		Command:      e.opts.Command,
 		Arguments:    e.opts.Arguments,
+		Mounts:       e.opts.Mounts, 
 	}
 }
 

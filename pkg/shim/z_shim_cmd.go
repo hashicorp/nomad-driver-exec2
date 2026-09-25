@@ -94,6 +94,11 @@ func init() {
 		copy(paths, cfg.UnveilPaths)
 		paths = append(paths, "w:"+outPipePath, "w:"+errPipePath)
 
+		if err := setupMounts(cfg.Mounts); err != nil {
+			subproc.Print("failed to set up mounts: %v", err)
+			return subproc.ExitFailure
+		}
+
 		// resolve capability names to kernel integers before calling dropPrivileges;
 		// this is a pure string-to-integer mapping that requires no privileges
 		var caps []uintptr
@@ -175,6 +180,26 @@ func init() {
 		_ = os.WriteFile(destination, []byte(strconv.Itoa(code)), 0o644)
 		return code
 	})
+}
+
+// setupMounts establishes each bind mount inside the task's private mount
+// namespace.
+//
+// A single bind mount cannot be created read-only atomically, so read-only
+// mounts are established as a normal bind and then remounted read-only.
+func setupMounts(mounts []Mount) error {
+	for _, m := range mounts {
+		if err := unix.Mount(m.Source, m.Target, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+			return fmt.Errorf("bind mount %q -> %q: %w", m.Source, m.Target, err)
+		}
+		if m.Readonly {
+			const roFlags = unix.MS_REMOUNT | unix.MS_BIND | unix.MS_RDONLY | unix.MS_REC
+			if err := unix.Mount("", m.Target, "", roFlags, ""); err != nil {
+				return fmt.Errorf("remount read-only %q: %w", m.Target, err)
+			}
+		}
+	}
+	return nil
 }
 
 // dropPrivileges conditionally drops uid/gid and adds the given capabilities

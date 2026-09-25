@@ -50,6 +50,9 @@ type ShimConfig struct {
 
 	// Arguments are the command-line arguments passed to Command.
 	Arguments []string `json:"arguments"`
+
+	// Mounts is the list of bind mounts.
+	Mounts []Mount `json:"mounts"`
 }
 
 // write marshals the config as JSON and atomically writes it into taskDir as
