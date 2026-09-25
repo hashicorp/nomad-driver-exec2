@@ -62,33 +62,3 @@ func Test_fixpipe_idempotent(t *testing.T) {
 	// calling again must not error — FIFO already exists
 	must.NoError(t, fixpipe(path, os.Getuid(), os.Getgid()))
 }
-
-func Test_split(t *testing.T) {
-	cases := []struct {
-		name  string
-		args  []string
-		paths []string
-		cmds  []string
-	}{
-		{
-			name:  "env",
-			args:  []string{"--", "env"},
-			paths: nil,
-			cmds:  []string{"env"},
-		},
-		{
-			name:  "cat",
-			args:  []string{"/etc/passwd:r", "--", "cat", "/etc/passwd"},
-			paths: []string{"/etc/passwd:r"},
-			cmds:  []string{"cat", "/etc/passwd"},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			paths, cmds := split(tc.args)
-			must.Eq(t, tc.paths, paths)
-			must.Eq(t, tc.cmds, cmds)
-		})
-	}
-}

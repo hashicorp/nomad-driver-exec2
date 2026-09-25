@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-golang@v3
         with:
           version-file: go.mod
@@ -35,6 +35,12 @@ jobs:
           echo 'data_dir="/tmp/nomad"' | sudo tee -a /etc/nomad.d/nomad.hcl
           echo 'bind_addr="0.0.0.0"' | sudo tee -a /etc/nomad.d/nomad.hcl
           echo 'plugin_dir="/tmp/nomad-plugins"' | sudo tee -a /etc/nomad.d/nomad.hcl
+      - name: Seed host volume
+        run: |
+          sudo mkdir -p /tmp/exec2-e2e-volume
+          echo 'hello from host volume' | sudo tee /tmp/exec2-e2e-volume/hello.txt
+          sudo chmod 0755 /tmp/exec2-e2e-volume
+          sudo chmod 0644 /tmp/exec2-e2e-volume/hello.txt
       - name: Start Nomad
         run: |
           echo "starting nomad using systemd"
