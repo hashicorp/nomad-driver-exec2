@@ -76,48 +76,27 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 
-	// stdin + resize → PTY master. ptmMu guards ptm access, ptmClosed 
-	// makes the stdin goroutine stop touching ptm once it is closed. 
-	var (
-		ptmMu     sync.Mutex
-		ptmClosed bool
-	)
+	// stdin + resize → PTY master. closeStdin is nil: the master is shared with
+	// stdout and must not be closed on Stdin.Close.
 	ptmWrite := func(p []byte) error {
-		ptmMu.Lock()
-		defer ptmMu.Unlock()
-		if ptmClosed {
-			return os.ErrClosed
-		}
 		_, err := ptm.Write(p)
 		return err
 	}
 	ptmResize := func(height, width int) error {
-		ptmMu.Lock()
-		defer ptmMu.Unlock()
-		if ptmClosed {
-			return os.ErrClosed
-		}
 		return pty.Setsize(ptm, &pty.Winsize{Rows: uint16(height), Cols: uint16(width)})
 	}
 	// Not in wg: blocks on stream.Recv() until the RPC returns.
 	go handleExecStdin(stream, ptmWrite, ptmResize, nil, errCh)
 
 	// stdout: PTY master → stream (stderr is merged into stdout by the PTY).
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		forwardExecOutput(ptm, stdoutDataMsg, stdoutCloseMsg, stream.Send, errCh)
-	}()
+	wg.Go(func() {
+		forwardExecOutput(ptm, wrapStdout, stream.Send, errCh)
+	})
 
 	waitErr := cmd.Wait()
 	// Unblock the stdout goroutine's ptm.Read.
 	_ = ptm.SetDeadline(time.Now())
 	wg.Wait()
-	// Mark ptm closed under the lock, this waits for any in-flight Write/Setsize
-	// and blocks the stdin goroutine from touching ptm before the deferred Close.
-	ptmMu.Lock()
-	ptmClosed = true
-	ptmMu.Unlock()
 
 	// Send the final exit result back to Nomad.
 	_ = stream.Send(buildExecExitResult(cmd.ProcessState, waitErr))
@@ -165,18 +144,14 @@ func execRawNoTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	go handleExecStdin(stream, stdinWrite, nil, func() { _ = stdinW.Close() }, errCh)
 
 	// stdout: cmd → gRPC stream
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		forwardExecOutput(stdoutR, stdoutDataMsg, stdoutCloseMsg, send, errCh)
-	}()
+	wg.Go(func() {
+		forwardExecOutput(stdoutR, wrapStdout, send, errCh)
+	})
 
 	// stderr: cmd → gRPC stream
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		forwardExecOutput(stderrR, stderrDataMsg, stderrCloseMsg, send, errCh)
-	}()
+	wg.Go(func() {
+		forwardExecOutput(stderrR, wrapStderr, send, errCh)
+	})
 
 	waitErr := cmd.Wait()
 	stdinR.Close()
@@ -234,9 +209,6 @@ func handleExecStdin(
 			}
 		case msg.TtySize != nil && resize != nil:
 			if rerr := resize(int(msg.TtySize.Height), int(msg.TtySize.Width)); rerr != nil {
-				if isExecStreamClosed(rerr) {
-					return
-				}
 				errCh <- rerr
 				return
 			}
@@ -244,36 +216,20 @@ func handleExecStdin(
 	}
 }
 
-func stdoutDataMsg(b []byte) *drivers.ExecTaskStreamingResponseMsg {
-	return &drivers.ExecTaskStreamingResponseMsg{
-		Stdout: &dproto.ExecTaskStreamingIOOperation{Data: b},
-	}
+func wrapStdout(op *dproto.ExecTaskStreamingIOOperation) *drivers.ExecTaskStreamingResponseMsg {
+	return &drivers.ExecTaskStreamingResponseMsg{Stdout: op}
 }
 
-func stdoutCloseMsg() *drivers.ExecTaskStreamingResponseMsg {
-	return &drivers.ExecTaskStreamingResponseMsg{
-		Stdout: &dproto.ExecTaskStreamingIOOperation{Close: true},
-	}
+func wrapStderr(op *dproto.ExecTaskStreamingIOOperation) *drivers.ExecTaskStreamingResponseMsg {
+	return &drivers.ExecTaskStreamingResponseMsg{Stderr: op}
 }
 
-func stderrDataMsg(b []byte) *drivers.ExecTaskStreamingResponseMsg {
-	return &drivers.ExecTaskStreamingResponseMsg{
-		Stderr: &dproto.ExecTaskStreamingIOOperation{Data: b},
-	}
-}
-
-func stderrCloseMsg() *drivers.ExecTaskStreamingResponseMsg {
-	return &drivers.ExecTaskStreamingResponseMsg{
-		Stderr: &dproto.ExecTaskStreamingIOOperation{Close: true},
-	}
-}
-
-// forwardExecOutput copies from r to the gRPC stream using the provided
-// message builders for data and close events.
+// forwardExecOutput copies from r to the gRPC stream. wrap places each IO
+// operation into the correct field (stdout or stderr). Data is streamed as it
+// is read and a final close operation is sent once the stream ends.
 func forwardExecOutput(
 	r io.Reader,
-	dataMsg func([]byte) *drivers.ExecTaskStreamingResponseMsg,
-	closeMsg func() *drivers.ExecTaskStreamingResponseMsg,
+	wrap func(*dproto.ExecTaskStreamingIOOperation) *drivers.ExecTaskStreamingResponseMsg,
 	send func(*drivers.ExecTaskStreamingResponseMsg) error,
 	errCh chan<- error,
 ) {
@@ -281,13 +237,13 @@ func forwardExecOutput(
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			if serr := send(dataMsg(buf[:n])); serr != nil {
+			if serr := send(wrap(&dproto.ExecTaskStreamingIOOperation{Data: buf[:n]})); serr != nil {
 				errCh <- serr
 				return
 			}
 		}
 		if isExecStreamClosed(err) {
-			_ = send(closeMsg())
+			_ = send(wrap(&dproto.ExecTaskStreamingIOOperation{Close: true}))
 			return
 		}
 		if err != nil {
