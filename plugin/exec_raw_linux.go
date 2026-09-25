@@ -17,6 +17,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	dproto "github.com/hashicorp/nomad/plugins/drivers/proto"
+	"golang.org/x/sys/unix"
 )
 
 // ExecTaskStreamingRaw services the driver ExecTaskStreaming RPC via the
@@ -83,7 +84,7 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 		return err
 	}
 	ptmResize := func(height, width int) error {
-		return pty.Setsize(ptm, &pty.Winsize{Rows: uint16(height), Cols: uint16(width)})
+		return setPTYSize(ptm, uint16(height), uint16(width))
 	}
 	// Not in wg: blocks on stream.Recv() until the RPC returns.
 	go handleExecStdin(stream, ptmWrite, ptmResize, nil, errCh)
@@ -107,6 +108,26 @@ func execRawTTY(cmd *exec.Cmd, stream drivers.ExecTaskStream) error {
 	default:
 		return nil
 	}
+}
+
+// setPTYSize applies a terminal window-size change to the PTY master. It runs
+// the ioctl through the runtime poller via SyscallConn, which keeps the fd
+// valid for the duration of the call and is therefore safe against a concurrent Close.
+func setPTYSize(f *os.File, rows, cols uint16) error {
+	conn, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var ioctlErr error
+	if err := conn.Control(func(fd uintptr) {
+		ioctlErr = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, &unix.Winsize{
+			Row: rows,
+			Col: cols,
+		})
+	}); err != nil {
+		return err
+	}
+	return ioctlErr
 }
 
 // execRawNoTTY runs cmd without a PTY, using plain pipes for stdin/stdout/stderr.
