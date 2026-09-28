@@ -4,6 +4,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -457,16 +459,68 @@ func (p *Plugin) SignalTask(taskID, signal string) error {
 	return h.Signal(signal)
 }
 
-// ExecTask is not yet implemented.
-func (*Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
-	// TODO(shoenig): implement this.
-	return nil, errors.New("ExecTask is not yet implemented")
+// ExecTask runs cmd synchronously inside the running task's Linux namespaces
+// and returns the buffered stdout, stderr, and exit code. It is used by Nomad
+// for script checks.
+func (p *Plugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
+	h, exists := p.tasks.Get(taskID)
+	if !exists {
+		return nil, drivers.ErrTaskNotFound
+	}
+
+	ctx, cancel := context.WithTimeout(p.ctx, timeout)
+	defer cancel()
+
+	pid := h.ExecInfo()
+	args := append(nsenterArgs(pid), cmd...)
+	command := exec.CommandContext(ctx, args[0], args[1:]...)
+
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+
+	runErr := command.Run()
+
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("exec task aborted: %w", err)
+	}
+
+	code, err := exitCode(runErr)
+	if err != nil {
+		return nil, fmt.Errorf("exec task failed: %w", err)
+	}
+
+	return &drivers.ExecTaskResult{
+		Stdout:     stdout.Bytes(),
+		Stderr:     stderr.Bytes(),
+		ExitResult: &drivers.ExitResult{ExitCode: code},
+	}, nil
 }
 
-// ExecTaskStreaming is not yet implemented.
-func (*Plugin) ExecTaskStreaming(ctx context.Context, taskID string, execOptions *drivers.ExecOptions) (*drivers.ExitResult, error) {
-	// TODO(shoenig): implement this.
-	return nil, errors.New("ExecTaskStreaming is not yet implemented")
+// exitCode extracts the process exit code from a command error.
+func exitCode(err error) (int, error) {
+	if err == nil {
+		return 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), nil
+	}
+	return 0, err
+}
+
+// nsenterArgs builds the nsenter prefix that enters *all* of the target's namespaces.
+//
+// --all follows whatever the shim isolates (mount, pid, ipc, and
+// network in bridge mode)
+func nsenterArgs(pid int) []string {
+	return []string{
+		"nsenter",
+		"--all",
+		"--target=" + strconv.Itoa(pid),
+		"--no-fork",
+		"--",
+	}
 }
 
 // netns returns the filepath to the network namespace if the network

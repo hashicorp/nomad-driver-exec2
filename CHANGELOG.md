@@ -2,6 +2,7 @@
 
 FEATURES:
 
+* `exec2` driver now supports `nomad alloc exec` running commands and interactive shells (`nomad alloc exec -t`) inside a running task, as well as Consul and Nomad script health checks. [[GH-102](https://github.com/hashicorp/nomad-driver-exec2/pull/102)]
 * Added support for host and CSI volume mounts via Nomad `volume`/`volume_mount` blocks. [[GH-106](https://github.com/hashicorp/nomad-driver-exec2/pull/106)]
 * Added `allow_caps` (plugin config), `cap_add` and `cap_drop` (task config) to support Linux ambient capabilities for tasks. [[GH-96](https://github.com/hashicorp/nomad-driver-exec2/pull/96)]
 
