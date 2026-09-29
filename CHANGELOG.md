@@ -1,5 +1,7 @@
 ## UNRELEASED
 
+## 0.2.0 (September 29, 2026)
+
 FEATURES:
 
 * `exec2` driver now supports `nomad alloc exec` running commands and interactive shells (`nomad alloc exec -t`) inside a running task, as well as Consul and Nomad script health checks. [[GH-102](https://github.com/hashicorp/nomad-driver-exec2/pull/102)]
