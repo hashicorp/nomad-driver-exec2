@@ -1,5 +1,9 @@
 ## UNRELEASED
 
+IMPROVEMENTS:
+
+* build: Update Go version to 1.27.1 [[GH-111](https://github.com/hashicorp/nomad-driver-exec2/pull/111)]
+
 ## 0.2.0 (September 29, 2026)
 
 FEATURES:
