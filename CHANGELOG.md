@@ -2,6 +2,7 @@
 
 IMPROVEMENTS:
 
+* build: Update Nomad to 2.0.7 [[GH-115](https://github.com/hashicorp/nomad-driver-exec2/pull/115)]
 * build: Update Go version to 1.27.1 [[GH-111](https://github.com/hashicorp/nomad-driver-exec2/pull/111)]
 
 ## 0.2.0 (September 29, 2026)
