@@ -6,6 +6,7 @@ package shim
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -259,7 +260,9 @@ func (e *exe) Stop(signal string, timeout time.Duration) error {
 	err := e.Signal(signal)
 	if e.blockPIDs(timeout) {
 		// no more mr. nice guy, kill the whole cgroup
-		_ = e.writeCG("cgroup.kill", "1")
+		if killErr := e.writeCG("cgroup.kill", "1"); killErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to kill cgroup: %w", killErr))
+		}
 	}
 	return err
 }
