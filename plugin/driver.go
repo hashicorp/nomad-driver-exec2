@@ -386,6 +386,7 @@ func (p *Plugin) StopTask(taskID string, timeout time.Duration, signal string) e
 
 	h, exists := p.tasks.Get(taskID)
 	if !exists {
+		p.logger.Warn("stop task called for untracked task", "id", taskID)
 		return nil
 	}
 	return h.Stop(signal, timeout)
@@ -399,6 +400,7 @@ func (p *Plugin) DestroyTask(taskID string, force bool) error {
 
 	h, exists := p.tasks.Get(taskID)
 	if !exists {
+		p.logger.Warn("destroy task called for untracked task", "id", taskID)
 		return nil
 	}
 
