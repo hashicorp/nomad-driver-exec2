@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-set/v2 v2.1.0
 	github.com/hashicorp/nomad v1.11.0-rc.1.0.20260917172403-9dcbdc5e64ec // v2.0.7
-	github.com/moby/sys/capability v0.4.0
+	github.com/moby/sys/capability v0.5.0
 	github.com/shoenig/go-landlock v1.3.1
 	github.com/shoenig/test v1.13.2
 	golang.org/x/sys v0.49.0
