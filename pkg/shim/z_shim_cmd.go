@@ -60,9 +60,9 @@ const (
 //
 // The argument format is as follows,
 //
-//	0. nomad              <- the executable name
-//	1. exec2-shim         <- this subcommand
-//	2. <config file path> <- path to the JSON ShimConfig written by the driver
+//  0. nomad              <- the executable name
+//  1. exec2-shim         <- this subcommand
+//  2. <config file path> <- path to the JSON ShimConfig written by the driver
 func init() {
 	subproc.Do(SubCommand, func() int {
 		// we need to ignore the stop signal (which is sent to the entire
@@ -148,7 +148,7 @@ func init() {
 		// invoke the task command with its args;
 		// ambient capabilities are already raised in this process and will be
 		// inherited by the child across the exec() boundary automatically
-		
+
 		// the environment has already been set for us by the exec2 driver;
 		// NOMAD_WORK_DIR is set to work_dir if configured, otherwise NOMAD_TASK_DIR
 		cmd := exec.Command(cmdpath, cfg.Arguments...)
@@ -204,19 +204,25 @@ func setupMounts(mounts []Mount) error {
 
 // dropPrivileges conditionally drops uid/gid and adds the given capabilities
 // to the ambient set of the shim process so they can be passed to the task process.
+// It always clears supplementary groups first, including for root tasks.
 //
 // This collapses the four cases into one function:
 //
-//	uid=0,  caps=[]  → 0 syscalls  (nothing to do)
+//	uid=0,  caps=[]  → 1 syscall  (setgroups only)
 //	uid=0,  caps=[…] → steps 4–6  (NO_NEW_PRIVS + CAPSET + AMBIENT_RAISE)
 //	uid≠0,  caps=[]  → steps 2–3  (setresgid + setresuid only)
 //	uid≠0,  caps=[…] → steps 1–7  (full sequence; KEEPCAPS preserves permitted across setresuid)
 func dropPrivileges(uid, gid int, caps []uintptr) error {
-	// All syscalls below are per-thread on Linux (setresuid, setresgid, capset,
-	// prctl). Lock this goroutine to its OS thread so the Go scheduler cannot
+	// All syscalls below are per-thread on Linux (setgroups, setresuid, setresgid,
+	// capset, prctl). Lock this goroutine to its OS thread so the Go scheduler cannot
 	// migrate it between syscalls, which would cause them to execute on
 	// different threads and silently corrupt capability state.
 	runtime.LockOSThread()
+
+	// Clear inherited groups before changing IDs, including for root tasks.
+	if err := unix.Setgroups(nil); err != nil {
+		return fmt.Errorf("clear supplementary groups: %w", err)
+	}
 
 	needDrop := uid != 0      // uid/gid transition only needed for non-root tasks
 	needCaps := len(caps) > 0 // cap management only needed when caps are requested
