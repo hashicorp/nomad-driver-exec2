@@ -145,6 +145,7 @@ func (w *pidWaiter) wait(ch chan<- *drivers.ExitResult) {
 		ch <- &drivers.ExitResult{
 			ExitCode: code,
 		}
+		return
 	}
 
 	// no need to check for an error
