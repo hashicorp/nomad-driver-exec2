@@ -164,6 +164,12 @@ func (e *exe) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to write shim config: %w", err)
 	}
 
+	// A previous run in this allocation can leave a stale exit status file.
+	// Remove it so recovery does not report this live run as exited.
+	if err = process.ClearExitStatusFile(e.env.TaskDir); err != nil {
+		return fmt.Errorf("failed to clear stale exit status: %w", err)
+	}
+
 	// create sandbox using nsenter, unshare, and our cgroup
 	cmd, err := e.prepare(ctx, home, fd, configPath)
 	if err != nil {

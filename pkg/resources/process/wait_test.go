@@ -81,3 +81,12 @@ func TestPID_Wait_poll(t *testing.T) {
 	must.NoError(t, result.Err)
 	must.Eq(t, 7, result.ExitCode)
 }
+
+func TestClearExitStatusFile(t *testing.T) {
+	taskDir := writeStatus(t, 7, 0)
+
+	must.NoError(t, ClearExitStatusFile(taskDir))
+	_, err := os.Stat(filepath.Join(taskDir, "local", exitStatusFile))
+	must.True(t, os.IsNotExist(err))
+	must.NoError(t, ClearExitStatusFile(taskDir))
+}
