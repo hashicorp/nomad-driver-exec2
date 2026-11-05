@@ -79,6 +79,17 @@ const (
 	exitStatusFile = ".exit_status.txt"
 )
 
+// ClearExitStatusFile removes the exit status file from a previous task run.
+// The task's local/ directory survives in-place restarts inside an allocation.
+// Clear the file before a new run starts. A missing file is not an error.
+func ClearExitStatusFile(taskdir string) error {
+	path := filepath.Join(taskdir, "local", exitStatusFile)
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // WaitPID is able to wait on a given specific PID. We must lookup the
 // process and also send a signal(0) to make sure it is actually still alive
 // before waiting on it.
